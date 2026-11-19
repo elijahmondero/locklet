@@ -81,6 +81,9 @@ interface InternalChamber {
   lastEffect: ChamberPublicState['lastEffect'];
   lastEffectPlayer: string | null;
   lastEffectAtMs: number;
+  lastGiftPlayer: string | null;
+  lastGiftTier: ChamberPublicState['lastGiftTier'];
+  lastGiftAtMs: number;
 }
 
 export interface StatsStore {
@@ -357,6 +360,9 @@ export class EscapeRoomEngine {
       lastEffect: 'none',
       lastEffectPlayer: null,
       lastEffectAtMs: 0,
+      lastGiftPlayer: null,
+      lastGiftTier: null,
+      lastGiftAtMs: 0,
     };
   }
 
@@ -558,9 +564,20 @@ export class EscapeRoomEngine {
     const chamber = this.resolveChamberForUser(handle);
     if (chamber) {
       this.enqueueViewer(chamber, handle, nowMs);
+      if (handle !== chamber.spotlightPlayer) {
+        const curIdx = chamber.pool.indexOf(handle);
+        if (curIdx !== -1) {
+          chamber.pool.splice(curIdx, 1);
+          const sIdx = chamber.spotlightPlayer ? chamber.pool.indexOf(chamber.spotlightPlayer) : -1;
+          chamber.pool.splice(sIdx >= 0 ? sIdx + 1 : 0, 0, handle);
+        }
+      }
+      chamber.lastGiftPlayer = handle;
+      chamber.lastGiftAtMs = nowMs;
     }
 
     if (safeDiamonds >= SABOTAGE_GIFT_MIN_DIAMONDS) {
+      if (chamber) chamber.lastGiftTier = 'sabotage';
       if (this.activeMode === 'versus' && chamber) {
         const rival = chamber.team === 'red' ? this.chambers.blue : this.chambers.red;
         if (rival) {
@@ -580,6 +597,7 @@ export class EscapeRoomEngine {
     }
 
     if (safeDiamonds >= SHIELD_GIFT_MIN_DIAMONDS) {
+      if (chamber) chamber.lastGiftTier = 'shield';
       if (this.phase === 'playing') {
         this.roundEndsAtMs = Math.min(nowMs + ROOM_DURATION_SEC * 1000, this.roundEndsAtMs + 15_000);
       }
@@ -595,6 +613,7 @@ export class EscapeRoomEngine {
 
     if (safeDiamonds >= CUT_LINE_GIFT_MIN_DIAMONDS) {
       if (chamber) {
+        chamber.lastGiftTier = 'cut_line';
         if (!chamber.pool.includes(handle)) chamber.pool.push(handle);
         if (!chamber.vipQueue.includes(handle)) {
           chamber.vipQueue.unshift(handle);
@@ -610,6 +629,7 @@ export class EscapeRoomEngine {
 
     if (safeDiamonds >= UV_GIFT_MIN_DIAMONDS) {
       if (chamber) {
+        chamber.lastGiftTier = 'uv';
         chamber.searchedPlayersThisStage.delete(handle);
         const uvProp =
           chamber.props.find((p) => !p.searchedBy && p.clueType === 'uv_secret') ??
@@ -657,6 +677,7 @@ export class EscapeRoomEngine {
       return { tier: 'uv', message: this.latestBanner };
     }
 
+    if (chamber) chamber.lastGiftTier = 'cheer';
     this.potGold += 10;
     this.latestBanner = `✨ ${handle} tossed coins into the escape pot (+10g)!`;
     return { tier: 'cheer', message: this.latestBanner };
@@ -992,6 +1013,7 @@ export class EscapeRoomEngine {
     }
 
     // Co-op Vault -> Open 10-Second Getaway Dash!
+    this.winnerTeam = 'coop';
     this.phase = 'getaway';
     this.getawayEndsAtMs = nowMs + GETAWAY_DURATION_SEC * 1000;
 
@@ -1073,6 +1095,9 @@ export class EscapeRoomEngine {
       lastEffect: chamber.lastEffect,
       lastEffectPlayer: chamber.lastEffectPlayer,
       lastEffectAtMs: chamber.lastEffectAtMs,
+      lastGiftPlayer: chamber.lastGiftPlayer,
+      lastGiftTier: chamber.lastGiftTier,
+      lastGiftAtMs: chamber.lastGiftAtMs,
     };
   }
 
@@ -1089,8 +1114,8 @@ export class EscapeRoomEngine {
     const hazardRatio =
       this.phase === 'playing'
         ? Math.max(0, Math.min(1, 1 - remainingSec / ROOM_DURATION_SEC))
-        : this.phase === 'getaway'
-          ? 0.25
+        : this.phase === 'getaway' || this.winnerTeam !== null
+          ? 0.2
           : 1;
 
     return {

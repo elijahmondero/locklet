@@ -40,12 +40,15 @@ interface ChamberRig {
   floorMat: THREE.MeshStandardMaterial;
   torchMats: THREE.MeshStandardMaterial[];
   doorLeaf: THREE.Group;
+  vaultChestGroup: THREE.Group;
   lockCrystalMats: [THREE.MeshStandardMaterial, THREE.MeshStandardMaterial, THREE.MeshStandardMaterial];
   hazardMesh: THREE.Mesh;
   hazardMat: THREE.MeshStandardMaterial;
   blackoutMesh: THREE.Mesh;
   bridgeTiles: Array<{ L: THREE.MeshStandardMaterial; R: THREE.MeshStandardMaterial }>;
   props: PropVisual[];
+  giftLabel: LabelSlot;
+  giftRing: THREE.Mesh;
   spotlightHolder: THREE.Group;
   spotlightLabel: LabelSlot;
   spotlightUser: string | null;
@@ -155,6 +158,7 @@ export class WorldRenderer {
   private currentMode: ActiveMode = 'coop';
   private currentThemeId = '';
   private latestSnapshot: RoomSnapshotMessage | null = null;
+  private readonly camLookAt = new THREE.Vector3(0, 0.45, 0.15);
 
   private readonly coopRig: ChamberRig;
   private readonly redRig: ChamberRig;
@@ -583,22 +587,50 @@ export class WorldRenderer {
       torchMats.push(flameMat);
     }
 
-    // Vault Door Frame + Lintel Header + Swinging Vault Door + Wheel Emblem + 3 Lock Crystals
-    const frame = new THREE.Mesh(this.track(new THREE.BoxGeometry(1.8, 2.22, 0.25)), trimMat);
-    frame.position.set(0, 1.11, -3.25);
-    const lintel = new THREE.Mesh(this.track(new THREE.BoxGeometry(2.15, 0.24, 0.36)), trimMat);
-    lintel.position.set(0, 2.26, -3.22);
-    floorGroup.add(frame, lintel);
+    // Vault Door Frame + Lintel + Dark Vault Backing + Hidden Golden Treasure Chest + Swinging Door + Wheel
+    const frame = new THREE.Mesh(this.track(new THREE.BoxGeometry(1.8, 2.22, 0.28)), trimMat);
+    frame.position.set(0, 1.11, -3.2);
+    const lintel = new THREE.Mesh(this.track(new THREE.BoxGeometry(2.15, 0.24, 0.38)), trimMat);
+    lintel.position.set(0, 2.26, -3.18);
+    const vaultBacking = new THREE.Mesh(
+      this.track(new THREE.BoxGeometry(1.44, 1.92, 0.05)),
+      this.track(new THREE.MeshBasicMaterial({ color: 0x020617 }))
+    );
+    vaultBacking.position.set(0, 1.02, -3.24);
+    floorGroup.add(frame, lintel, vaultBacking);
+
+    const vaultChestGroup = new THREE.Group();
+    vaultChestGroup.position.set(0, 0.22, -3.08);
+    const chestBase = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.62, 0.36, 0.3)), brassMat);
+    const chestLid = new THREE.Mesh(
+      this.track(new THREE.BoxGeometry(0.64, 0.18, 0.32)),
+      this.track(
+        new THREE.MeshStandardMaterial({
+          color: 0xfbbf24,
+          emissive: 0xd97706,
+          emissiveIntensity: 0.65,
+          roughness: 0.35,
+        })
+      )
+    );
+    chestLid.position.y = 0.25;
+    const chestClasp = new THREE.Mesh(
+      this.track(new THREE.BoxGeometry(0.12, 0.16, 0.34)),
+      this.track(new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfacc15, emissiveIntensity: 0.5 }))
+    );
+    chestClasp.position.y = 0.18;
+    vaultChestGroup.add(chestBase, chestLid, chestClasp);
+    floorGroup.add(vaultChestGroup);
 
     const doorLeaf = new THREE.Group();
-    doorLeaf.position.set(-0.74, 1.02, -3.12);
+    doorLeaf.position.set(-0.74, 1.02, -2.92);
     const doorMesh = new THREE.Mesh(
-      this.track(new THREE.BoxGeometry(1.48, 1.94, 0.14)),
+      this.track(new THREE.BoxGeometry(1.48, 1.94, 0.12)),
       this.track(new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.45, roughness: 0.35 }))
     );
     doorMesh.position.set(0.74, 0, 0);
     const doorWheel = new THREE.Mesh(this.track(new THREE.TorusGeometry(0.24, 0.04, 8, 16)), brassMat);
-    doorWheel.position.set(0.74, 0, 0.09);
+    doorWheel.position.set(0.74, 0, 0.08);
     doorLeaf.add(doorMesh, doorWheel);
     floorGroup.add(doorLeaf);
 
@@ -692,6 +724,23 @@ export class WorldRenderer {
     this.mountFallbackHeroMesh(spotlightHolder, 0xfbbf24);
     floorGroup.add(spotlightHolder);
 
+    const giftLabel = this.createLabelSlot(1.65, 0.38);
+    giftLabel.sprite.visible = false;
+    const giftRing = new THREE.Mesh(
+      this.track(new THREE.RingGeometry(0.22, 0.34, 24)),
+      this.track(
+        new THREE.MeshBasicMaterial({
+          color: 0xfbbf24,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.9,
+        })
+      )
+    );
+    giftRing.rotation.x = -Math.PI / 2;
+    giftRing.visible = false;
+    floorGroup.add(giftLabel.sprite, giftRing);
+
     // 24 Tiny Roaming Crowd Adventurers
     const queueHolders: THREE.Group[] = [];
     const queueWalkers: CrowdWalkerState[] = [];
@@ -756,12 +805,15 @@ export class WorldRenderer {
       floorMat,
       torchMats,
       doorLeaf,
+      vaultChestGroup,
       lockCrystalMats,
       hazardMesh,
       hazardMat,
       blackoutMesh,
       bridgeTiles,
       props,
+      giftLabel,
+      giftRing,
       spotlightHolder,
       spotlightLabel,
       spotlightUser: null,
@@ -1074,44 +1126,44 @@ export class WorldRenderer {
   private animateScene(dtSec: number): void {
     const t = this.elapsedSec;
     const snap = this.latestSnapshot;
+    const nowMs = Date.now();
 
+    const anyWin =
+      snap?.phase === 'getaway' ||
+      (snap?.winnerTeam !== null && snap?.winnerTeam !== undefined);
     this.skyMat.uniforms.uTime.value = t;
     if (this.ambientParticles) {
-      this.ambientParticles.rotation.y = t * 0.08;
-      this.ambientParticles.position.y = Math.sin(t * 0.5) * 0.25;
+      this.ambientParticles.rotation.y = t * (anyWin ? 0.35 : 0.08);
+      this.ambientParticles.position.y = Math.sin(t * (anyWin ? 1.8 : 0.5)) * 0.25;
+      if (anyWin) {
+        this.ambientParticleMat?.color.setHex(0xfbbf24);
+      } else if (snap?.theme) {
+        this.ambientParticleMat?.color.setHex(snap.theme.hazardColor);
+      }
     }
 
-    // Gentle orbital camera drift, tilt, breathing zoom, unlock zoom & zap shake
-    const isCoop = this.currentMode === 'coop';
-    const baseY = isCoop ? 8.8 : 3.8;
-    const baseZ = isCoop ? 11.4 : 16.4;
-    const lookY = isCoop ? 0.45 : -0.05;
-    const lookZ = isCoop ? 0.15 : 0;
-
-    const orbitX = Math.sin(t * 0.42) * (isCoop ? 0.85 : 0.75);
-    const tiltY = Math.cos(t * 0.34) * 0.42;
-    let zoomZ = Math.sin(t * 0.55) * (isCoop ? 0.78 : 0.65);
-
-    const activeCh = isCoop ? snap?.chambers.coop : snap?.chambers.red;
-    const recentUnlock =
-      activeCh?.lastEffect === 'unlock' && Date.now() - activeCh.lastEffectAtMs < 1300;
-    if (snap?.phase === 'getaway' || recentUnlock) {
-      zoomZ -= isCoop ? 1.25 : 0.9;
-    }
-
-    const anyZap = [snap?.chambers.coop, snap?.chambers.red, snap?.chambers.blue].some(
-      (c) => c?.lastEffect === 'zap' && Date.now() - c.lastEffectAtMs < 550
-    );
-    const shakeX = anyZap ? Math.sin(t * 58) * 0.16 : 0;
-    const shakeY = anyZap ? Math.cos(t * 52) * 0.12 : 0;
-
-    this.camera.position.set(orbitX + shakeX, baseY + tiltY + shakeY, baseZ + zoomZ);
-    this.camera.lookAt(orbitX * 0.18, lookY + tiltY * 0.15, lookZ);
+    let giftFocusX = 0;
+    let giftFocusY = 0;
+    let giftFocusZ = 0;
+    let hasGiftFocus = false;
+    let latestGiftAt = 0;
 
     for (const rig of [this.coopRig, this.redRig, this.blueRig]) {
       if (!rig.root.visible) continue;
       rig.spotlightMixer?.update(dtSec);
       for (const qm of rig.queueMixers) qm?.update(dtSec);
+
+      const chamber =
+        rig.team === 'coop'
+          ? snap?.chambers.coop
+          : rig.team === 'red'
+            ? snap?.chambers.red
+            : snap?.chambers.blue;
+
+      const isChamberWin =
+        snap?.phase === 'getaway' || (snap?.winnerTeam !== null && snap?.winnerTeam === rig.team);
+      const isChamberLoss =
+        snap?.loserPitTeam === rig.team || (snap?.phase === 'round_over' && snap?.winnerTeam === null);
 
       // Slow turntable rotation & gentle 3D sway/tilt on the room diorama
       const phaseOffset = rig.team === 'blue' ? 0.85 : 0;
@@ -1119,9 +1171,11 @@ export class WorldRenderer {
       rig.root.rotation.x = Math.cos(t * 0.36 + phaseOffset) * 0.045;
       rig.root.rotation.z = Math.sin(t * 0.3 + phaseOffset) * 0.024;
 
-      // Flickering dungeon wall torches
+      // Flickering dungeon wall torches (crimson on loss, emerald/gold on win)
       rig.torchMats.forEach((tm, idx) => {
-        tm.emissiveIntensity = 1.15 + Math.sin(t * 14 + idx * 2.1) * 0.35;
+        tm.color.setHex(isChamberLoss ? 0xf43f5e : isChamberWin ? 0x34d399 : 0xfbbf24);
+        tm.emissive.setHex(isChamberLoss ? 0xe11d48 : isChamberWin ? 0x10b981 : 0xf97316);
+        tm.emissiveIntensity = (isChamberLoss ? 1.55 : 1.15) + Math.sin(t * 14 + idx * 2.1) * 0.35;
       });
 
       // Gentle float on unsearched prop meshes
@@ -1129,39 +1183,41 @@ export class WorldRenderer {
         pv.meshHolder.rotation.y = Math.sin(t * 0.9 + i) * 0.12;
       });
 
-      // Door swings open during Getaway or Victory!
-      const isOpen =
-        snap?.phase === 'getaway' ||
-        (snap?.winnerTeam !== null && snap?.winnerTeam === rig.team);
-      const targetDoorRot = isOpen ? -1.45 : 0;
+      // Door swings open to reveal Golden Treasure Chest on Getaway or Victory!
+      const targetDoorRot = isChamberWin ? -1.45 : 0;
       rig.doorLeaf.rotation.y += (targetDoorRot - rig.doorLeaf.rotation.y) * Math.min(1, dtSec * 8);
+      rig.vaultChestGroup.rotation.y = Math.sin(t * 2.5) * 0.25;
+      rig.vaultChestGroup.position.y = isChamberWin ? 0.26 + Math.abs(Math.sin(t * 6)) * 0.08 : 0.22;
 
-      // Trapdoor pit drop for the losing Versus room
-      const dropped = snap?.loserPitTeam === rig.team;
-      const targetFloorY = dropped ? -0.82 : 0;
+      // Trapdoor pit collapse on Loss / losing Versus room
+      const targetFloorY = isChamberLoss ? -0.82 : 0;
       rig.floorGroup.position.y += (targetFloorY - rig.floorGroup.position.y) * Math.min(1, dtSec * 6);
 
-      // Rising hazard fluid plane calibrated to miniature character height (~0.47u):
-      // stays in under-floor pit early, puddles at ankle height midway (ratio=0.5 -> y≈0.02),
-      // rises to chest height in final 15s, and only submerges the room at 0s (ratio=1.0 -> y≈0.54).
-      const ratio = snap?.hazardRatio ?? 0;
+      // Calibrated rising hazard fluid plane (full flood on Loss)
+      const ratio = isChamberLoss ? 1.0 : (snap?.hazardRatio ?? 0);
       rig.hazardMesh.position.y =
         -0.24 + ratio * 0.42 + Math.pow(ratio, 3) * 0.36 + Math.sin(t * 2.5) * 0.015;
 
-      // Spotlight active lock pacing, bridge advancing, getaway sprint & zap shake
-      const chamber =
-        rig.team === 'coop'
-          ? snap?.chambers.coop
-          : rig.team === 'red'
-            ? snap?.chambers.red
-            : snap?.chambers.blue;
-      const isZapped = chamber?.lastEffect === 'zap' && Date.now() - chamber.lastEffectAtMs < 650;
+      // Identify active gifter inside this chamber
+      const activeGift =
+        Boolean(chamber?.lastGiftPlayer) && nowMs - (chamber?.lastGiftAtMs ?? 0) < 2200;
+      let giftHolder: THREE.Group | null = null;
+      if (activeGift && chamber?.lastGiftPlayer) {
+        if (rig.spotlightUser === chamber.lastGiftPlayer && rig.spotlightHolder.visible) {
+          giftHolder = rig.spotlightHolder;
+        } else {
+          const qIdx = rig.queueUsers.findIndex((u, i) => u === chamber.lastGiftPlayer && rig.queueHolders[i]?.visible);
+          giftHolder = qIdx >= 0 ? rig.queueHolders[qIdx] : rig.spotlightHolder.visible ? rig.spotlightHolder : null;
+        }
+      }
 
+      // Spotlight hero animation (lock glance, bridge step, win cheer, loss tumble, gift highlight)
+      const isZapped = chamber?.lastEffect === 'zap' && nowMs - chamber.lastEffectAtMs < 650;
       let spotTargetX = Math.sin(t * 2.2) * 0.22;
       let spotTargetZ = 0.2 + Math.cos(t * 1.8) * 0.08;
-      if (snap?.phase === 'getaway' || (snap?.winnerTeam !== null && snap?.winnerTeam === rig.team)) {
+      if (isChamberWin) {
         spotTargetX = 0;
-        spotTargetZ = -2.8;
+        spotTargetZ = -1.8;
       } else if (chamber?.lockStage === 3 && chamber.bridgeStep > 0) {
         spotTargetX = 0;
         spotTargetZ = -0.55 - (chamber.bridgeStep - 1) * 0.56;
@@ -1170,28 +1226,75 @@ export class WorldRenderer {
       const prevSpotX = rig.spotlightHolder.position.x;
       rig.spotlightHolder.position.x += (spotTargetX - prevSpotX) * spotLerp;
       rig.spotlightHolder.position.z += (spotTargetZ - rig.spotlightHolder.position.z) * spotLerp;
-      rig.spotlightHolder.rotation.y = (spotTargetX - prevSpotX) * -0.8;
-      rig.spotlightHolder.position.y = isZapped
-        ? 0.35 + Math.abs(Math.sin(t * 28)) * 0.45
-        : 0.04 + Math.abs(Math.sin(t * 9)) * 0.04;
 
-      // 24 Tiny Crowd Walkers roaming props, aisles & sprinting on Getaway
-      const isDash = snap?.phase === 'getaway' || (snap?.winnerTeam !== null && snap?.winnerTeam === rig.team);
+      if (giftHolder === rig.spotlightHolder) {
+        rig.spotlightHolder.scale.setScalar(1.42);
+        rig.spotlightHolder.rotation.set(0, Math.PI, 0);
+        rig.spotlightHolder.position.y = 0.14 + Math.abs(Math.sin(t * 15)) * 0.14;
+      } else {
+        rig.spotlightHolder.scale.setScalar(1.0);
+        if (isChamberLoss) {
+          rig.spotlightHolder.rotation.x = -1.25;
+          rig.spotlightHolder.rotation.z = Math.sin(t * 6) * 0.35;
+          rig.spotlightHolder.position.y = 0.18 + Math.sin(t * 4) * 0.04;
+        } else if (isChamberWin) {
+          rig.spotlightHolder.rotation.set(0, Math.PI + Math.sin(t * 4) * 0.2, 0);
+          rig.spotlightHolder.position.y = 0.08 + Math.abs(Math.sin(t * 13)) * 0.14;
+        } else {
+          rig.spotlightHolder.rotation.x = 0;
+          rig.spotlightHolder.rotation.z = 0;
+          const lookAtCamera = Math.sin(t * 1.45) > 0.3;
+          const targetSpotYaw = lookAtCamera ? Math.PI * 0.88 : (spotTargetX - prevSpotX) * -0.8;
+          rig.spotlightHolder.rotation.y +=
+            (targetSpotYaw - rig.spotlightHolder.rotation.y) * Math.min(1, dtSec * 6);
+          rig.spotlightHolder.position.y = isZapped
+            ? 0.35 + Math.abs(Math.sin(t * 28)) * 0.45
+            : 0.04 + Math.abs(Math.sin(t * 9)) * 0.04;
+        }
+      }
+
+      // 24 Tiny Crowd Walkers: roaming, front-facing pauses, gift pop, win jump & loss tumble
       for (let q = 0; q < rig.queueHolders.length; q++) {
         const qh = rig.queueHolders[q];
         if (!qh.visible) continue;
         const w = rig.queueWalkers[q];
 
-        if (isDash) {
-          w.targetX = ((q % 3) - 1) * 0.35;
-          w.targetZ = -2.95;
-          w.pauseSec = 0;
+        if (giftHolder === qh) {
+          qh.scale.setScalar(1.42);
+          qh.rotation.set(0, Math.PI, 0);
+          qh.position.set(w.x, 0.14 + Math.abs(Math.sin(t * 15)) * 0.14, w.z);
+          continue;
         }
+        qh.scale.setScalar(1.0);
+
+        if (isChamberLoss) {
+          qh.rotation.x = -1.25;
+          qh.rotation.z = Math.sin(t * 6 + q) * 0.35;
+          qh.position.set(w.x, 0.18 + Math.sin(t * 4 + q) * 0.04, w.z);
+          continue;
+        }
+
+        if (isChamberWin) {
+          const celebRot = Math.PI + Math.sin(t * 5 + q) * 0.25;
+          qh.rotation.x = 0;
+          qh.rotation.z = 0;
+          qh.rotation.y += (celebRot - qh.rotation.y) * Math.min(1, dtSec * 8);
+          qh.position.set(w.x, 0.08 + Math.abs(Math.sin(t * 13 + q * 0.7)) * 0.14, w.z);
+          continue;
+        }
+
+        qh.rotation.x = 0;
 
         if (w.pauseSec > 0) {
           w.pauseSec -= dtSec;
-          qh.position.set(w.x, 0.04 + Math.sin(t * 4 + w.phase) * 0.015, w.z);
           qh.rotation.z = 0;
+          if ((q + w.visitIdx) % 3 !== 0) {
+            const frontYaw = Math.PI + Math.sin(t * 3 + w.phase) * 0.22;
+            qh.rotation.y += (frontYaw - qh.rotation.y) * Math.min(1, dtSec * 8);
+            qh.position.set(w.x, 0.04 + Math.abs(Math.sin(t * 8 + w.phase)) * 0.045, w.z);
+          } else {
+            qh.position.set(w.x, 0.04 + Math.sin(t * 4 + w.phase) * 0.015, w.z);
+          }
           continue;
         }
 
@@ -1200,13 +1303,11 @@ export class WorldRenderer {
         const dist = Math.hypot(dx, dz);
 
         if (dist < 0.1) {
-          if (!isDash) {
-            w.pauseSec = 0.35 + ((q * 7 + w.visitIdx) % 10) * 0.08;
-            w.visitIdx++;
-            const nextPt = pickWalkerTarget(q, w.visitIdx);
-            w.targetX = nextPt.x;
-            w.targetZ = nextPt.z;
-          }
+          w.pauseSec = 0.45 + ((q * 7 + w.visitIdx) % 10) * 0.09;
+          w.visitIdx++;
+          const nextPt = pickWalkerTarget(q, w.visitIdx);
+          w.targetX = nextPt.x;
+          w.targetZ = nextPt.z;
           continue;
         }
 
@@ -1230,8 +1331,8 @@ export class WorldRenderer {
         }
 
         w.x = Math.max(-2.5, Math.min(2.5, w.x));
-        w.z = Math.max(isDash ? -3.0 : -2.1, Math.min(3.05, w.z));
-        if (!isDash && Math.abs(w.x) < 0.72 && w.z < 0.38) {
+        w.z = Math.max(-2.1, Math.min(3.05, w.z));
+        if (Math.abs(w.x) < 0.72 && w.z < 0.38) {
           w.x = w.x < 0 ? -0.76 : 0.76;
           if (w.targetX * w.x < 0 && w.targetZ < 0.5) {
             w.targetZ = 1.65 + (q % 4) * 0.25;
@@ -1242,7 +1343,86 @@ export class WorldRenderer {
         qh.rotation.y = Math.atan2(-dx, -dz);
         qh.rotation.z = Math.sin(t * 11 + w.phase) * 0.07;
       }
+
+      // Gift Halo & Floating Label
+      if (activeGift && giftHolder && chamber?.lastGiftPlayer) {
+        rig.giftRing.visible = true;
+        rig.giftRing.position.set(giftHolder.position.x, 0.05, giftHolder.position.z);
+        rig.giftLabel.sprite.visible = true;
+        rig.giftLabel.sprite.position.set(
+          giftHolder.position.x,
+          giftHolder.position.y + 0.78,
+          giftHolder.position.z
+        );
+        const tierLabel = (chamber.lastGiftTier ?? 'GIFT').replace('_', ' ').toUpperCase();
+        this.drawLabelSlot(
+          rig.giftLabel,
+          `🎁 ${chamber.lastGiftPlayer} · ${tierLabel}!`,
+          'rgba(109, 40, 217, 0.94)',
+          '#fde047'
+        );
+
+        if (!isChamberLoss && (chamber.lastGiftAtMs ?? 0) >= latestGiftAt) {
+          latestGiftAt = chamber.lastGiftAtMs ?? nowMs;
+          hasGiftFocus = true;
+          giftFocusX = rig.root.position.x + giftHolder.position.x * rig.root.scale.x;
+          giftFocusY = rig.root.position.y + giftHolder.position.y * rig.root.scale.y;
+          giftFocusZ = rig.root.position.z + giftHolder.position.z * rig.root.scale.z;
+        }
+      } else {
+        rig.giftRing.visible = false;
+        rig.giftLabel.sprite.visible = false;
+      }
     }
+
+    // Camera animation: Gift focus zoom vs smooth orbital sway, unlock zoom & zap shake
+    const isCoop = this.currentMode === 'coop';
+    const baseY = isCoop ? 8.8 : 3.8;
+    const baseZ = isCoop ? 11.4 : 16.4;
+    const lookY = isCoop ? 0.45 : -0.05;
+    const lookZ = isCoop ? 0.15 : 0;
+
+    const orbitX = Math.sin(t * 0.42) * (isCoop ? 0.85 : 0.75);
+    const tiltY = Math.cos(t * 0.34) * 0.42;
+    let zoomZ = Math.sin(t * 0.55) * (isCoop ? 0.78 : 0.65);
+
+    const activeCh = isCoop ? snap?.chambers.coop : snap?.chambers.red;
+    const recentUnlock =
+      activeCh?.lastEffect === 'unlock' && nowMs - activeCh.lastEffectAtMs < 1300;
+    if (snap?.phase === 'getaway' || recentUnlock) {
+      zoomZ -= isCoop ? 1.25 : 0.9;
+    }
+
+    const anyZap = [snap?.chambers.coop, snap?.chambers.red, snap?.chambers.blue].some(
+      (c) => c?.lastEffect === 'zap' && nowMs - c.lastEffectAtMs < 550
+    );
+    const shakeX = anyZap ? Math.sin(t * 58) * 0.16 : 0;
+    const shakeY = anyZap ? Math.cos(t * 52) * 0.12 : 0;
+
+    let targetCamX = orbitX + shakeX;
+    let targetCamY = baseY + tiltY + shakeY;
+    let targetCamZ = baseZ + zoomZ;
+    let targetLookX = orbitX * 0.18;
+    let targetLookY = lookY + tiltY * 0.15;
+    let targetLookZ = lookZ;
+
+    if (hasGiftFocus) {
+      targetCamX = targetCamX * 0.3 + giftFocusX * 0.7;
+      targetCamY = targetCamY * 0.3 + (giftFocusY + (isCoop ? 3.2 : 2.3)) * 0.7;
+      targetCamZ = targetCamZ * 0.3 + (giftFocusZ + (isCoop ? 5.6 : 6.4)) * 0.7;
+      targetLookX = giftFocusX * 0.65;
+      targetLookY = giftFocusY + 0.25;
+      targetLookZ = giftFocusZ * 0.65;
+    }
+
+    const camBlend = Math.min(1, dtSec * (hasGiftFocus ? 4.8 : 6.5));
+    this.camera.position.x += (targetCamX - this.camera.position.x) * camBlend;
+    this.camera.position.y += (targetCamY - this.camera.position.y) * camBlend;
+    this.camera.position.z += (targetCamZ - this.camera.position.z) * camBlend;
+    this.camLookAt.x += (targetLookX - this.camLookAt.x) * camBlend;
+    this.camLookAt.y += (targetLookY - this.camLookAt.y) * camBlend;
+    this.camLookAt.z += (targetLookZ - this.camLookAt.z) * camBlend;
+    this.camera.lookAt(this.camLookAt);
   }
 
   public dispose(): void {

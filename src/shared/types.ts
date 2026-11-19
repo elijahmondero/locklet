@@ -66,6 +66,9 @@ export interface ChamberPublicState {
   lastEffect: 'none' | 'zap' | 'unlock' | 'shield' | 'clue' | 'dash';
   lastEffectPlayer: string | null;
   lastEffectAtMs: number;
+  lastGiftPlayer: string | null;
+  lastGiftTier: 'uv' | 'cut_line' | 'shield' | 'sabotage' | 'cheer' | null;
+  lastGiftAtMs: number;
 }
 
 export interface PlayerStatsRecord {

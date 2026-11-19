@@ -279,6 +279,35 @@ body {
   border-radius: 5px;
 }
 
+.outcome-banner {
+  position: absolute;
+  top: 46%;
+  left: 12px;
+  right: 12px;
+  transform: translateY(-50%);
+  z-index: 14;
+  pointer-events: none;
+  padding: 11px 14px;
+  border-radius: 14px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 900;
+  color: #fff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+}
+.outcome-banner.hidden { display: none; }
+.outcome-banner.win {
+  background: linear-gradient(135deg, rgba(6, 95, 70, 0.94), rgba(180, 83, 9, 0.94));
+  border: 2px solid #fde047;
+  color: #fef08a;
+}
+.outcome-banner.loss {
+  background: rgba(127, 29, 29, 0.94);
+  border: 2px solid #fb7185;
+  color: #fecdd3;
+}
+
 /* Side Leaderboard & Rules Panel */
 .side-panel {
   width: 320px;
@@ -357,6 +386,7 @@ export class StreamHUD {
   private readonly propSearchRowEl: HTMLDivElement;
   private readonly modeButtons = new Map<GameModeSetting, HTMLButtonElement>();
   private readonly safeGuideLineEl: HTMLDivElement;
+  private readonly outcomeBannerEl: HTMLDivElement;
   private readonly wsStatusEl: HTMLDivElement;
   private readonly lbListEl: HTMLDivElement;
   private readonly userInputEl: HTMLInputElement;
@@ -386,6 +416,9 @@ export class StreamHUD {
       el('span', 'safe-guide-tag', 'TikTok Bottom 35% Chat Safe Floor')
     );
     phoneFrame.appendChild(this.safeGuideLineEl);
+
+    this.outcomeBannerEl = el('div', 'outcome-banner hidden');
+    phoneFrame.appendChild(this.outcomeBannerEl);
 
     const hudOverlay = el('div', 'hud-overlay');
 
@@ -597,6 +630,25 @@ export class StreamHUD {
     }
 
     this.bannerEl.textContent = snapshot.latestBanner;
+
+    if (snapshot.phase === 'getaway') {
+      this.outcomeBannerEl.className = 'outcome-banner win';
+      this.outcomeBannerEl.textContent =
+        `🚪🔓 VAULT OPEN (${snapshot.getawayRemainingSec}s)! TYPE "RUN" NOW! · ` +
+        `🔓 ${snapshot.getawayWinners.lockbreaker ?? 'Crew'} · 🏃 ${snapshot.getawayWinners.firstRunner ?? 'Open!'}`;
+    } else if (snapshot.phase === 'round_over' && snapshot.winnerTeam !== null) {
+      this.outcomeBannerEl.className = 'outcome-banner win';
+      this.outcomeBannerEl.textContent =
+        snapshot.activeMode === 'versus'
+          ? `🏆 TEAM ${snapshot.winnerTeam.toUpperCase()} WINS THE RACE! Losing cell dropped into the pit!`
+          : `🏆 VAULT ESCAPED! Winners: 🔓 ${snapshot.getawayWinners.lockbreaker ?? '-'} · 🔍 ${snapshot.getawayWinners.clueMvp ?? '-'} · 🏃 ${snapshot.getawayWinners.firstRunner ?? '-'}`;
+    } else if (snapshot.phase === 'round_over' && snapshot.winnerTeam === null) {
+      this.outcomeBannerEl.className = 'outcome-banner loss';
+      this.outcomeBannerEl.textContent = `💀 DOOMED! ${snapshot.theme.hazardName} flooded the chamber! Next room loading...`;
+    } else {
+      this.outcomeBannerEl.className = 'outcome-banner hidden';
+      this.outcomeBannerEl.textContent = '';
+    }
 
     // 2. Center Lock Display (Co-op OR Red vs Blue Split)
     if (snapshot.activeMode === 'coop' && snapshot.chambers.coop) {
