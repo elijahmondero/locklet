@@ -56,17 +56,17 @@ interface ChamberRig {
 }
 
 const CORNER_COORDS: Record<'nw' | 'ne' | 'sw' | 'se', [number, number]> = {
-  nw: [-2.1, -1.75],
-  ne: [2.1, -1.75],
-  sw: [-2.15, 0.95],
-  se: [2.15, 0.95],
+  nw: [-2.1, -2.25],
+  ne: [2.1, -2.25],
+  sw: [-2.15, 1.15],
+  se: [2.15, 1.15],
 };
 
 const QUEUE_SLOTS: ReadonlyArray<{ x: number; z: number; rotY: number }> = [
-  { x: -1.05, z: 1.55, rotY: -0.25 },
-  { x: 1.05, z: 1.55, rotY: 0.25 },
-  { x: -1.75, z: 2.05, rotY: -0.35 },
-  { x: 1.75, z: 2.05, rotY: 0.35 },
+  { x: -1.05, z: 1.95, rotY: -0.25 },
+  { x: 1.05, z: 1.95, rotY: 0.25 },
+  { x: -1.85, z: 2.55, rotY: -0.35 },
+  { x: 1.85, z: 2.55, rotY: 0.35 },
 ];
 
 function pickClip(clips: THREE.AnimationClip[], keywords: string[]): THREE.AnimationClip | undefined {
@@ -118,17 +118,17 @@ export class WorldRenderer {
     const width = options.width || container.clientWidth || 540;
     const height = options.height || container.clientHeight || 960;
 
-    this.camera = new THREE.PerspectiveCamera(48, 9 / 16, 0.1, 120);
-    this.camera.position.set(0, 7.4, 15.2);
-    this.camera.lookAt(0, 0.75, 0);
+    this.camera = new THREE.PerspectiveCamera(46, 9 / 16, 0.1, 120);
+    this.camera.position.set(0, 8.8, 11.4);
+    this.camera.lookAt(0, 0.45, 0.15);
 
     this.initRenderer(width, height);
     this.buildLights();
     this.buildSky();
 
-    this.coopRig = this.createChamberRig('coop', 0, 0.96);
-    this.redRig = this.createChamberRig('red', -1.78, 0.52);
-    this.blueRig = this.createChamberRig('blue', 1.78, 0.52);
+    this.coopRig = this.createChamberRig('coop', 0, -0.85, 0.9);
+    this.redRig = this.createChamberRig('red', 0, 1.15, 0.7);
+    this.blueRig = this.createChamberRig('blue', 0, -2.35, 0.7);
     this.redRig.root.visible = false;
     this.blueRig.root.visible = false;
 
@@ -274,9 +274,9 @@ export class WorldRenderer {
     slot.texture.needsUpdate = true;
   }
 
-  private createChamberRig(team: TeamId, offsetX: number, scale: number): ChamberRig {
+  private createChamberRig(team: TeamId, offsetX: number, offsetY: number, scale: number): ChamberRig {
     const root = new THREE.Group();
-    root.position.set(offsetX, 0, 0);
+    root.position.set(offsetX, offsetY, 0);
     root.scale.setScalar(scale);
 
     const floorGroup = new THREE.Group();
@@ -287,7 +287,7 @@ export class WorldRenderer {
     const floorMat = this.track(new THREE.MeshStandardMaterial({ color: 0x0e7490, roughness: 0.85 }));
 
     // Floor slab + recessed carpet
-    const slab = new THREE.Mesh(this.track(new THREE.BoxGeometry(6.4, 0.35, 5.8)), floorMat);
+    const slab = new THREE.Mesh(this.track(new THREE.BoxGeometry(6.4, 0.35, 7.2)), floorMat);
     slab.position.y = -0.18;
     const carpetMat = this.track(
       new THREE.MeshStandardMaterial({
@@ -295,31 +295,54 @@ export class WorldRenderer {
         roughness: 0.8,
       })
     );
-    const carpet = new THREE.Mesh(this.track(new THREE.BoxGeometry(1.4, 0.04, 3.8)), carpetMat);
-    carpet.position.set(0, 0.02, 0.6);
+    const carpet = new THREE.Mesh(this.track(new THREE.BoxGeometry(1.5, 0.04, 5.2)), carpetMat);
+    carpet.position.set(0, 0.02, 0.8);
     floorGroup.add(slab, carpet);
 
+    // Cutaway under-floor foundation & trap pit anchored to root
+    const pitMat = this.track(new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.9 }));
+    const pitBottom = new THREE.Mesh(this.track(new THREE.BoxGeometry(5.9, 0.18, 7.0)), pitMat);
+    pitBottom.position.set(0, -0.82, 0);
+    const pillarL = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.32, 0.72, 7.2)), trimMat);
+    pillarL.position.set(-3.04, -0.48, 0);
+    const pillarR = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.32, 0.72, 7.2)), trimMat);
+    pillarR.position.set(3.04, -0.48, 0);
+    const fasciaColor = team === 'red' ? 0xe11d48 : team === 'blue' ? 0x0284c7 : 0xd97706;
+    const frontFascia = new THREE.Mesh(
+      this.track(new THREE.BoxGeometry(6.44, 0.26, 0.24)),
+      this.track(
+        new THREE.MeshStandardMaterial({
+          color: fasciaColor,
+          emissive: fasciaColor,
+          emissiveIntensity: 0.35,
+          roughness: 0.4,
+        })
+      )
+    );
+    frontFascia.position.set(0, -0.18, 3.55);
+    root.add(pitBottom, pillarL, pillarR, frontFascia);
+
     // Cutaway back & side walls
-    const backWall = new THREE.Mesh(this.track(new THREE.BoxGeometry(6.4, 3.4, 0.32)), wallMat);
-    backWall.position.set(0, 1.68, -2.75);
-    const sideL = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.3, 3.4, 5.6)), wallMat);
-    sideL.position.set(-3.05, 1.68, 0);
-    const sideR = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.3, 3.4, 5.6)), wallMat);
-    sideR.position.set(3.05, 1.68, 0);
+    const backWall = new THREE.Mesh(this.track(new THREE.BoxGeometry(6.4, 3.0, 0.32)), wallMat);
+    backWall.position.set(0, 1.48, -3.45);
+    const sideL = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.3, 3.0, 7.2)), wallMat);
+    sideL.position.set(-3.05, 1.48, 0);
+    const sideR = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.3, 3.0, 7.2)), wallMat);
+    sideR.position.set(3.05, 1.48, 0);
     floorGroup.add(backWall, sideL, sideR);
 
     // Vault Door Frame + Swinging Vault Door + 3 Lock Crystals
-    const frame = new THREE.Mesh(this.track(new THREE.BoxGeometry(1.75, 2.35, 0.25)), trimMat);
-    frame.position.set(0, 1.18, -2.55);
+    const frame = new THREE.Mesh(this.track(new THREE.BoxGeometry(1.8, 2.22, 0.25)), trimMat);
+    frame.position.set(0, 1.11, -3.25);
     floorGroup.add(frame);
 
     const doorLeaf = new THREE.Group();
-    doorLeaf.position.set(-0.72, 1.1, -2.42);
+    doorLeaf.position.set(-0.74, 1.02, -3.12);
     const doorMesh = new THREE.Mesh(
-      this.track(new THREE.BoxGeometry(1.42, 2.05, 0.14)),
+      this.track(new THREE.BoxGeometry(1.48, 1.94, 0.14)),
       this.track(new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.45, roughness: 0.35 }))
     );
-    doorMesh.position.set(0.72, 0, 0);
+    doorMesh.position.set(0.74, 0, 0);
     doorLeaf.add(doorMesh);
     floorGroup.add(doorLeaf);
 
@@ -335,21 +358,21 @@ export class WorldRenderer {
     const crystalGeo = this.track(new THREE.OctahedronGeometry(0.18, 0));
     for (let i = 0; i < 3; i++) {
       const cry = new THREE.Mesh(crystalGeo, lockCrystalMats[i]);
-      cry.position.set(-0.46 + i * 0.46, 2.6, -2.35);
+      cry.position.set(-0.48 + i * 0.48, 2.42, -3.05);
       floorGroup.add(cry);
     }
 
     // 3-Step L/R Bridge Tiles in front of the Vault Door
     const bridgeTiles: Array<{ L: THREE.MeshStandardMaterial; R: THREE.MeshStandardMaterial }> = [];
-    const tileGeo = this.track(new THREE.BoxGeometry(0.54, 0.08, 0.42));
+    const tileGeo = this.track(new THREE.BoxGeometry(0.58, 0.08, 0.48));
     for (let step = 0; step < 3; step++) {
       const matL = this.track(new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.5 }));
       const matR = this.track(new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.5 }));
       const tileL = new THREE.Mesh(tileGeo, matL);
       const tileR = new THREE.Mesh(tileGeo, matR);
-      const tz = -0.3 - step * 0.55;
-      tileL.position.set(-0.42, 0.06, tz);
-      tileR.position.set(0.42, 0.06, tz);
+      const tz = -0.75 - step * 0.68;
+      tileL.position.set(-0.46, 0.06, tz);
+      tileR.position.set(0.46, 0.06, tz);
       floorGroup.add(tileL, tileR);
       bridgeTiles.push({ L: matL, R: matR });
     }
@@ -369,13 +392,13 @@ export class WorldRenderer {
           roughness: 0.4,
         })
       );
-      const ring = new THREE.Mesh(this.track(new THREE.TorusGeometry(0.32, 0.04, 8, 24)), pedMat);
+      const ring = new THREE.Mesh(this.track(new THREE.TorusGeometry(0.38, 0.045, 8, 24)), pedMat);
       ring.rotation.x = Math.PI / 2;
       ring.position.y = 0.05;
 
       const meshHolder = new THREE.Group();
       const fallbackCrate = new THREE.Mesh(
-        this.track(new THREE.BoxGeometry(0.38, 0.38, 0.38)),
+        this.track(new THREE.BoxGeometry(0.44, 0.44, 0.44)),
         this.track(
           new THREE.MeshStandardMaterial({
             color: idx % 2 === 0 ? 0xd97706 : 0x7c3aed,
@@ -383,11 +406,11 @@ export class WorldRenderer {
           })
         )
       );
-      fallbackCrate.position.y = 0.21;
+      fallbackCrate.position.y = 0.24;
       meshHolder.add(fallbackCrate);
 
-      const label = this.createLabelSlot(1.35, 0.34);
-      label.sprite.position.set(0, 0.95, 0);
+      const label = this.createLabelSlot(1.45, 0.36);
+      label.sprite.position.set(0, 1.05, 0);
       pGroup.add(ring, meshHolder, label.sprite);
       floorGroup.add(pGroup);
       return { group: pGroup, beaconMat: pedMat, meshHolder, label, corner };
@@ -395,7 +418,7 @@ export class WorldRenderer {
 
     // Spotlight Hero standing at the lock
     const spotlightHolder = new THREE.Group();
-    spotlightHolder.position.set(0, 0.04, 0.15);
+    spotlightHolder.position.set(0, 0.04, 0.25);
     const shieldRingMat = this.track(
       new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
     );
@@ -407,8 +430,8 @@ export class WorldRenderer {
     spotlightShieldRing.position.y = 0.04;
     spotlightShieldRing.visible = false;
 
-    const spotlightLabel = this.createLabelSlot(1.55, 0.38);
-    spotlightLabel.sprite.position.set(0, 1.18, 0);
+    const spotlightLabel = this.createLabelSlot(1.6, 0.4);
+    spotlightLabel.sprite.position.set(0, 1.28, 0);
     spotlightHolder.add(spotlightShieldRing, spotlightLabel.sprite);
     this.mountFallbackHeroMesh(spotlightHolder, 0xfbbf24);
     floorGroup.add(spotlightHolder);
@@ -438,14 +461,14 @@ export class WorldRenderer {
         roughness: 0.2,
       })
     );
-    const hazardMesh = new THREE.Mesh(this.track(new THREE.PlaneGeometry(6.1, 5.5)), hazardMat);
+    const hazardMesh = new THREE.Mesh(this.track(new THREE.PlaneGeometry(6.1, 6.9)), hazardMat);
     hazardMesh.rotation.x = -Math.PI / 2;
-    hazardMesh.position.set(0, -0.1, 0);
+    hazardMesh.position.set(0, -0.32, 0);
     root.add(hazardMesh);
 
     // Rival Blackout Curtain
     const blackoutMesh = new THREE.Mesh(
-      this.track(new THREE.BoxGeometry(6.3, 3.6, 5.7)),
+      this.track(new THREE.BoxGeometry(6.3, 3.1, 7.1)),
       this.track(
         new THREE.MeshBasicMaterial({
           color: 0x020617,
@@ -454,7 +477,7 @@ export class WorldRenderer {
         })
       )
     );
-    blackoutMesh.position.set(0, 1.7, 0);
+    blackoutMesh.position.set(0, 1.5, 0);
     blackoutMesh.visible = false;
     root.add(blackoutMesh);
 
@@ -561,7 +584,7 @@ export class WorldRenderer {
           const tpl = this.worldPropTemplates[idx % this.worldPropTemplates.length];
           pv.meshHolder.clear();
           const clone = tpl.clone(true);
-          clone.scale.setScalar(0.38);
+          clone.scale.setScalar(0.44);
           pv.meshHolder.add(clone);
         });
       }
@@ -613,11 +636,12 @@ export class WorldRenderer {
       this.redRig.root.visible = !isCoop;
       this.blueRig.root.visible = !isCoop;
       if (isCoop) {
-        this.camera.position.set(0, 7.4, 15.2);
+        this.camera.position.set(0, 8.8, 11.4);
+        this.camera.lookAt(0, 0.45, 0.15);
       } else {
-        this.camera.position.set(0, 7.8, 16.6);
+        this.camera.position.set(0, 3.8, 16.4);
+        this.camera.lookAt(0, -0.05, 0);
       }
-      this.camera.lookAt(0, 0.75, 0);
     }
 
     // 2. Apply rotating room theme palette
@@ -690,7 +714,7 @@ export class WorldRenderer {
       if (rig.spotlightUser !== state.spotlightPlayer || rig.spotlightClass !== cls) {
         rig.spotlightUser = state.spotlightPlayer;
         rig.spotlightClass = cls;
-        rig.spotlightMixer = this.swapHeroModel(rig.spotlightHolder, cls, 0.38, rig.spotlightMixer);
+        rig.spotlightMixer = this.swapHeroModel(rig.spotlightHolder, cls, 0.44, rig.spotlightMixer);
       }
       const shielded = state.shieldedPlayers.includes(state.spotlightPlayer);
       rig.spotlightShieldRing.visible = shielded;
@@ -715,7 +739,7 @@ export class WorldRenderer {
       qh.visible = true;
       if (rig.queueUsers[q] !== qUser) {
         rig.queueUsers[q] = qUser;
-        rig.queueMixers[q] = this.swapHeroModel(qh, pickClassForName(qUser), 0.31, rig.queueMixers[q]);
+        rig.queueMixers[q] = this.swapHeroModel(qh, pickClassForName(qUser), 0.36, rig.queueMixers[q]);
       }
     }
 
@@ -772,12 +796,12 @@ export class WorldRenderer {
 
       // Trapdoor pit drop for the losing Versus room
       const dropped = snap?.loserPitTeam === rig.team;
-      const targetFloorY = dropped ? -3.4 : 0;
+      const targetFloorY = dropped ? -0.82 : 0;
       rig.floorGroup.position.y += (targetFloorY - rig.floorGroup.position.y) * Math.min(1, dtSec * 6);
 
       // Rising hazard fluid plane
       const ratio = snap?.hazardRatio ?? 0;
-      rig.hazardMesh.position.y = -0.15 + ratio * 1.45 + Math.sin(t * 2.5) * 0.03;
+      rig.hazardMesh.position.y = -0.32 + ratio * 1.55 + Math.sin(t * 2.5) * 0.03;
 
       // Spotlight zap shake
       const chamber =

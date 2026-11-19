@@ -79,13 +79,13 @@ body {
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
-  padding: 10px;
+  padding: 7px 8px;
   pointer-events: none;
 }
 .hud-top {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   pointer-events: auto;
 }
 .hazard-card {
@@ -93,10 +93,10 @@ body {
   backdrop-filter: blur(8px);
   border: 1.5px solid rgba(56, 189, 248, 0.55);
   border-radius: 12px;
-  padding: 8px 10px;
+  padding: 5px 8px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .hazard-card.cursed { border-color: #c084fc; background: rgba(59, 7, 100, 0.88); }
 .hazard-row {
@@ -105,7 +105,7 @@ body {
   align-items: center;
   gap: 6px;
 }
-.theme-title { font-size: 13px; font-weight: 900; color: #f8fafc; }
+.theme-title { font-size: 12px; font-weight: 900; color: #f8fafc; }
 .timer-badge {
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid var(--lk-border);
@@ -118,7 +118,7 @@ body {
 }
 .hazard-track {
   width: 100%;
-  height: 8px;
+  height: 6px;
   background: rgba(0, 0, 0, 0.5);
   border-radius: 999px;
   overflow: hidden;
@@ -140,8 +140,8 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.35);
   color: #e2e8f0;
   border-radius: 8px;
-  padding: 4px 8px;
-  font-size: 10.5px;
+  padding: 3px 7px;
+  font-size: 10px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -157,8 +157,8 @@ body {
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(251, 191, 36, 0.55);
   border-radius: 10px;
-  padding: 6px 9px;
-  font-size: 11px;
+  padding: 4px 8px;
+  font-size: 10.5px;
   font-weight: 800;
   color: #fde68a;
   text-align: center;
@@ -168,10 +168,10 @@ body {
   backdrop-filter: blur(8px);
   border: 1px solid var(--lk-border);
   border-radius: 11px;
-  padding: 7px 9px;
+  padding: 5px 8px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .versus-grid {
   display: grid;
@@ -182,11 +182,11 @@ body {
   background: rgba(15, 23, 42, 0.86);
   border: 1.5px solid var(--lk-border);
   border-radius: 10px;
-  padding: 6px;
+  padding: 4px 6px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 10px;
+  gap: 2px;
+  font-size: 9.5px;
 }
 .team-card.red { border-color: rgba(251, 113, 133, 0.7); }
 .team-card.blue { border-color: rgba(56, 189, 248, 0.7); }
@@ -206,13 +206,13 @@ body {
   font-size: 10px;
 }
 .lock-readout {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
   color: #ffffff;
   text-align: center;
   background: rgba(2, 6, 23, 0.55);
   border-radius: 8px;
-  padding: 4px 6px;
+  padding: 3px 5px;
 }
 .clues-row {
   display: flex;
@@ -220,11 +220,11 @@ body {
   gap: 4px;
 }
 .clue-chip {
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 700;
   background: rgba(255, 255, 255, 0.08);
   color: #cbd5e1;
-  padding: 2px 6px;
+  padding: 1.5px 5px;
   border-radius: 6px;
 }
 .clue-chip.found { background: rgba(16, 185, 129, 0.25); color: #a7f3d0; }
@@ -232,7 +232,7 @@ body {
 .hud-bottom {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   pointer-events: auto;
 }
 .play-dock {
@@ -240,10 +240,10 @@ body {
   backdrop-filter: blur(10px);
   border: 1.5px solid rgba(52, 211, 153, 0.45);
   border-radius: 13px;
-  padding: 8px;
+  padding: 6px 7px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .dock-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .lk-input {
@@ -596,8 +596,8 @@ export class StreamHUD {
     } else if (snapshot.chambers.red && snapshot.chambers.blue) {
       const grid = el('div', 'versus-grid');
       grid.append(
-        this.buildVersusCard('🔴 RED CELL', 'red', snapshot.chambers.red),
-        this.buildVersusCard('🔵 BLUE CELL', 'blue', snapshot.chambers.blue)
+        this.buildVersusCard('🔴 RED CELL (TOP)', 'red', snapshot.chambers.red),
+        this.buildVersusCard('🔵 BLUE CELL (BOT)', 'blue', snapshot.chambers.blue)
       );
       this.centerPanelEl.replaceChildren(grid);
 
@@ -681,19 +681,20 @@ export class StreamHUD {
     // Prop search buttons
     const propBtns: HTMLElement[] = [];
     if (snapshot.activeMode === 'versus') {
-      const rBtn = el('button', 'lk-btn rose', '🔴 Join Red');
+      const rBtn = el('button', 'lk-btn rose', '🔴 Red');
       rBtn.type = 'button';
       rBtn.addEventListener('click', () => void this.sendChat('team red'));
-      const bBtn = el('button', 'lk-btn active', '🔵 Join Blue');
+      const bBtn = el('button', 'lk-btn active', '🔵 Blue');
       bBtn.type = 'button';
       bBtn.addEventListener('click', () => void this.sendChat('team blue'));
       propBtns.push(rBtn, bBtn);
     }
     for (const p of ch.props) {
+      const prefix = p.searchedBy ? '✓ ' : snapshot.activeMode === 'versus' ? '' : 'Search ';
       const b = el(
         'button',
         p.searchedBy ? 'lk-btn mint' : 'lk-btn',
-        `${p.emoji} ${p.searchedBy ? '✓' : 'Search'} ${p.name}`
+        `${p.emoji} ${prefix}${p.name}`
       );
       b.type = 'button';
       b.disabled = Boolean(p.searchedBy);
