@@ -38,6 +38,7 @@ interface ChamberRig {
   floorGroup: THREE.Group;
   wallMats: THREE.MeshStandardMaterial[];
   floorMat: THREE.MeshStandardMaterial;
+  torchMats: THREE.MeshStandardMaterial[];
   doorLeaf: THREE.Group;
   lockCrystalMats: [THREE.MeshStandardMaterial, THREE.MeshStandardMaterial, THREE.MeshStandardMaterial];
   hazardMesh: THREE.Mesh;
@@ -146,6 +147,10 @@ export class WorldRenderer {
 
   private readonly disposables: Array<{ dispose: () => void }> = [];
   private skyMat!: THREE.ShaderMaterial;
+  private ambientParticles: THREE.Points | null = null;
+  private ambientParticleMat: THREE.PointsMaterial | null = null;
+  private wallBrickTex: THREE.CanvasTexture | null = null;
+  private floorTileTex: THREE.CanvasTexture | null = null;
 
   private currentMode: ActiveMode = 'coop';
   private currentThemeId = '';
@@ -170,6 +175,8 @@ export class WorldRenderer {
     this.initRenderer(width, height);
     this.buildLights();
     this.buildSky();
+    this.wallBrickTex = this.createStoneWallTexture();
+    this.floorTileTex = this.createFloorTileTexture();
 
     this.coopRig = this.createChamberRig('coop', 0, -0.85, 0.85);
     this.redRig = this.createChamberRig('red', 0, 1.15, 0.67);
@@ -239,6 +246,81 @@ export class WorldRenderer {
     this.scene.add(hemi, key, rim);
   }
 
+  private createStoneWallTexture(): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+    if (!ctx) return null;
+
+    ctx.fillStyle = '#64748b';
+    ctx.fillRect(0, 0, 256, 256);
+
+    const rows = 8;
+    const rowH = 256 / rows;
+    const cols = 4;
+    const colW = 256 / cols;
+    const tones = ['#cbd5e1', '#dde5ef', '#b6c2d2', '#d2dce8'];
+
+    for (let r = 0; r < rows; r++) {
+      const offset = r % 2 === 1 ? colW * 0.5 : 0;
+      for (let c = -1; c <= cols; c++) {
+        const bx = c * colW + offset + 3;
+        const by = r * rowH + 3;
+        const bw = colW - 6;
+        const bh = rowH - 6;
+        ctx.fillStyle = tones[(r * 3 + c + 4) % tones.length];
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(bx, by, bw, 3);
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(bx, by + bh - 3, bw, 3);
+      }
+    }
+
+    const tex = this.track(new THREE.CanvasTexture(canvas));
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3, 2);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  private createFloorTileTexture(): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+    if (!ctx) return null;
+
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(0, 0, 256, 256);
+
+    const grid = 4;
+    const step = 256 / grid;
+    for (let r = 0; r < grid; r++) {
+      for (let c = 0; c < grid; c++) {
+        const tx = c * step + 3;
+        const ty = r * step + 3;
+        const size = step - 6;
+        ctx.fillStyle = (r + c) % 2 === 0 ? '#d1d9e6' : '#bcc6d6';
+        ctx.fillRect(tx, ty, size, size);
+        ctx.strokeStyle = '#eef2f7';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(tx + 2, ty + 2, size - 4, size - 4);
+      }
+    }
+
+    const tex = this.track(new THREE.CanvasTexture(canvas));
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(4, 4);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
   private buildSky(): void {
     this.skyMat = this.track(
       new THREE.ShaderMaterial({
@@ -246,6 +328,8 @@ export class WorldRenderer {
         uniforms: {
           uTop: { value: new THREE.Color(0x082f49) },
           uBottom: { value: new THREE.Color(0x0284c7) },
+          uAccent: { value: new THREE.Color(0x38bdf8) },
+          uTime: { value: 0 },
         },
         vertexShader: `
           varying vec2 vUv;
@@ -257,9 +341,17 @@ export class WorldRenderer {
         fragmentShader: `
           uniform vec3 uTop;
           uniform vec3 uBottom;
+          uniform vec3 uAccent;
+          uniform float uTime;
           varying vec2 vUv;
           void main() {
-            gl_FragColor = vec4(mix(uBottom, uTop, vUv.y), 1.0);
+            vec3 grad = mix(uBottom, uTop, vUv.y);
+            float dist = length(vUv - vec2(0.5, 0.48));
+            float halo = smoothstep(0.65, 0.0, dist);
+            float ray = 0.5 + 0.5 * sin((vUv.x * 11.0 + vUv.y * 4.5) - uTime * 0.45);
+            float vignette = smoothstep(0.92, 0.25, length(vUv - vec2(0.5, 0.5)));
+            vec3 col = grad * (0.42 + 0.58 * vignette) + uAccent * (halo * 0.24 + ray * halo * 0.08);
+            gl_FragColor = vec4(col, 1.0);
           }
         `,
       })
@@ -267,6 +359,25 @@ export class WorldRenderer {
     const sky = new THREE.Mesh(this.track(new THREE.PlaneGeometry(55, 45)), this.skyMat);
     sky.position.set(0, 4, -15);
     this.scene.add(sky);
+
+    // Floating atmospheric ember / dust motes around the dungeon
+    const particleCount = 70;
+    const positions = new Float32Array(particleCount * 3);
+    for (let i = 0; i < particleCount; i++) {
+      const h1 = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
+      const h2 = Math.abs(Math.sin((i + 17) * 78.233) * 43758.5453) % 1;
+      const h3 = Math.abs(Math.sin((i + 53) * 39.346) * 43758.5453) % 1;
+      positions[i * 3] = (h1 - 0.5) * 9.0;
+      positions[i * 3 + 1] = -3.5 + h2 * 8.0;
+      positions[i * 3 + 2] = -4.0 + h3 * 7.5;
+    }
+    const pGeo = this.track(new THREE.BufferGeometry());
+    pGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this.ambientParticleMat = this.track(
+      new THREE.PointsMaterial({ color: 0x7dd3fc, size: 0.11, transparent: true, opacity: 0.65 })
+    );
+    this.ambientParticles = new THREE.Points(pGeo, this.ambientParticleMat);
+    this.scene.add(this.ambientParticles);
   }
 
   private createLabelSlot(scaleX: number, scaleY: number): LabelSlot {
@@ -327,11 +438,26 @@ export class WorldRenderer {
     const floorGroup = new THREE.Group();
     root.add(floorGroup);
 
-    const wallMat = this.track(new THREE.MeshStandardMaterial({ color: 0x164e63, roughness: 0.78 }));
+    const wallMat = this.track(
+      new THREE.MeshStandardMaterial({
+        color: 0x164e63,
+        roughness: 0.78,
+        ...(this.wallBrickTex ? { map: this.wallBrickTex } : {}),
+      })
+    );
     const trimMat = this.track(new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 }));
-    const floorMat = this.track(new THREE.MeshStandardMaterial({ color: 0x0e7490, roughness: 0.85 }));
+    const brassMat = this.track(
+      new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.35, roughness: 0.4 })
+    );
+    const floorMat = this.track(
+      new THREE.MeshStandardMaterial({
+        color: 0x0e7490,
+        roughness: 0.85,
+        ...(this.floorTileTex ? { map: this.floorTileTex } : {}),
+      })
+    );
 
-    // Floor slab + recessed carpet
+    // Floor slab + recessed carpet + brass edge runners
     const slab = new THREE.Mesh(this.track(new THREE.BoxGeometry(6.4, 0.35, 7.2)), floorMat);
     slab.position.y = -0.18;
     const carpetMat = this.track(
@@ -342,7 +468,12 @@ export class WorldRenderer {
     );
     const carpet = new THREE.Mesh(this.track(new THREE.BoxGeometry(1.5, 0.04, 5.2)), carpetMat);
     carpet.position.set(0, 0.02, 0.8);
-    floorGroup.add(slab, carpet);
+    const runnerGeo = this.track(new THREE.BoxGeometry(0.08, 0.045, 5.2));
+    const runnerL = new THREE.Mesh(runnerGeo, brassMat);
+    runnerL.position.set(-0.76, 0.022, 0.8);
+    const runnerR = new THREE.Mesh(runnerGeo, brassMat);
+    runnerR.position.set(0.76, 0.022, 0.8);
+    floorGroup.add(slab, carpet, runnerL, runnerR);
 
     // Cutaway under-floor foundation & trap pit anchored to root
     const pitMat = this.track(new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.9 }));
@@ -367,7 +498,7 @@ export class WorldRenderer {
     frontFascia.position.set(0, -0.18, 3.55);
     root.add(pitBottom, pillarL, pillarR, frontFascia);
 
-    // Cutaway back & side walls
+    // Cutaway back & side walls + architectural crown cornices, wainscot, corner pillars & ribs
     const backWall = new THREE.Mesh(this.track(new THREE.BoxGeometry(6.4, 3.0, 0.32)), wallMat);
     backWall.position.set(0, 1.48, -3.45);
     const sideL = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.3, 3.0, 7.2)), wallMat);
@@ -376,10 +507,88 @@ export class WorldRenderer {
     sideR.position.set(3.05, 1.48, 0);
     floorGroup.add(backWall, sideL, sideR);
 
-    // Vault Door Frame + Swinging Vault Door + 3 Lock Crystals
+    // Top crown cornices & lower wainscot baseboards
+    const crownBack = new THREE.Mesh(this.track(new THREE.BoxGeometry(6.56, 0.22, 0.44)), trimMat);
+    crownBack.position.set(0, 3.02, -3.45);
+    const crownSideGeo = this.track(new THREE.BoxGeometry(0.44, 0.22, 7.3));
+    const crownL = new THREE.Mesh(crownSideGeo, trimMat);
+    crownL.position.set(-3.05, 3.02, 0);
+    const crownR = new THREE.Mesh(crownSideGeo, trimMat);
+    crownR.position.set(3.05, 3.02, 0);
+
+    const baseBack = new THREE.Mesh(this.track(new THREE.BoxGeometry(6.3, 0.28, 0.38)), trimMat);
+    baseBack.position.set(0, 0.14, -3.43);
+    const baseSideGeo = this.track(new THREE.BoxGeometry(0.38, 0.28, 7.1));
+    const baseL = new THREE.Mesh(baseSideGeo, trimMat);
+    baseL.position.set(-3.03, 0.14, 0);
+    const baseR = new THREE.Mesh(baseSideGeo, trimMat);
+    baseR.position.set(3.03, 0.14, 0);
+    floorGroup.add(crownBack, crownL, crownR, baseBack, baseL, baseR);
+
+    // 4 Corner Stone Columns + Capital Caps
+    const colGeo = this.track(new THREE.BoxGeometry(0.46, 3.28, 0.46));
+    const capGeo = this.track(new THREE.BoxGeometry(0.58, 0.18, 0.58));
+    for (const [cx, cz] of [
+      [-3.05, -3.45],
+      [3.05, -3.45],
+      [-3.05, 3.48],
+      [3.05, 3.48],
+    ]) {
+      const col = new THREE.Mesh(colGeo, trimMat);
+      col.position.set(cx, 1.56, cz);
+      const cap = new THREE.Mesh(capGeo, trimMat);
+      cap.position.set(cx, 3.22, cz);
+      floorGroup.add(col, cap);
+    }
+
+    // Vertical wall buttresses (2 back wall, 2 left wall, 2 right wall)
+    const backRibGeo = this.track(new THREE.BoxGeometry(0.24, 2.8, 0.18));
+    for (const bx of [-1.75, 1.75]) {
+      const rib = new THREE.Mesh(backRibGeo, trimMat);
+      rib.position.set(bx, 1.5, -3.32);
+      floorGroup.add(rib);
+    }
+    const sideRibGeo = this.track(new THREE.BoxGeometry(0.18, 2.8, 0.24));
+    for (const sx of [-2.92, 2.92]) {
+      for (const sz of [-1.15, 1.15]) {
+        const rib = new THREE.Mesh(sideRibGeo, trimMat);
+        rib.position.set(sx, 1.5, sz);
+        floorGroup.add(rib);
+      }
+    }
+
+    // 4 Flickering Wall Torches
+    const torchMats: THREE.MeshStandardMaterial[] = [];
+    const bracketGeo = this.track(new THREE.BoxGeometry(0.12, 0.32, 0.12));
+    const flameGeo = this.track(new THREE.OctahedronGeometry(0.14, 0));
+    for (const [tx, ty, tz] of [
+      [-1.28, 1.65, -3.22],
+      [1.28, 1.65, -3.22],
+      [-2.84, 1.65, 0.1],
+      [2.84, 1.65, 0.1],
+    ]) {
+      const bracket = new THREE.Mesh(bracketGeo, trimMat);
+      bracket.position.set(tx, ty, tz);
+      const flameMat = this.track(
+        new THREE.MeshStandardMaterial({
+          color: 0xfbbf24,
+          emissive: 0xf97316,
+          emissiveIntensity: 1.4,
+          roughness: 0.3,
+        })
+      );
+      const flame = new THREE.Mesh(flameGeo, flameMat);
+      flame.position.set(tx, ty + 0.24, tz);
+      floorGroup.add(bracket, flame);
+      torchMats.push(flameMat);
+    }
+
+    // Vault Door Frame + Lintel Header + Swinging Vault Door + Wheel Emblem + 3 Lock Crystals
     const frame = new THREE.Mesh(this.track(new THREE.BoxGeometry(1.8, 2.22, 0.25)), trimMat);
     frame.position.set(0, 1.11, -3.25);
-    floorGroup.add(frame);
+    const lintel = new THREE.Mesh(this.track(new THREE.BoxGeometry(2.15, 0.24, 0.36)), trimMat);
+    lintel.position.set(0, 2.26, -3.22);
+    floorGroup.add(frame, lintel);
 
     const doorLeaf = new THREE.Group();
     doorLeaf.position.set(-0.74, 1.02, -3.12);
@@ -388,7 +597,9 @@ export class WorldRenderer {
       this.track(new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.45, roughness: 0.35 }))
     );
     doorMesh.position.set(0.74, 0, 0);
-    doorLeaf.add(doorMesh);
+    const doorWheel = new THREE.Mesh(this.track(new THREE.TorusGeometry(0.24, 0.04, 8, 16)), brassMat);
+    doorWheel.position.set(0.74, 0, 0.09);
+    doorLeaf.add(doorMesh, doorWheel);
     floorGroup.add(doorLeaf);
 
     const lockCrystalMats: [
@@ -543,6 +754,7 @@ export class WorldRenderer {
       floorGroup,
       wallMats: [wallMat],
       floorMat,
+      torchMats,
       doorLeaf,
       lockCrystalMats,
       hazardMesh,
@@ -712,6 +924,8 @@ export class WorldRenderer {
       this.currentThemeId = snapshot.theme.id;
       this.skyMat.uniforms.uTop.value.setHex(snapshot.theme.ambientSkyTop);
       this.skyMat.uniforms.uBottom.value.setHex(snapshot.theme.ambientSkyBottom);
+      this.skyMat.uniforms.uAccent.value.setHex(snapshot.theme.hazardColor);
+      this.ambientParticleMat?.color.setHex(snapshot.theme.hazardColor);
       for (const rig of [this.coopRig, this.redRig, this.blueRig]) {
         for (const wm of rig.wallMats) wm.color.setHex(snapshot.theme.wallColor);
         rig.floorMat.color.setHex(snapshot.theme.floorColor);
@@ -861,6 +1075,12 @@ export class WorldRenderer {
     const t = this.elapsedSec;
     const snap = this.latestSnapshot;
 
+    this.skyMat.uniforms.uTime.value = t;
+    if (this.ambientParticles) {
+      this.ambientParticles.rotation.y = t * 0.08;
+      this.ambientParticles.position.y = Math.sin(t * 0.5) * 0.25;
+    }
+
     // Gentle orbital camera drift, tilt, breathing zoom, unlock zoom & zap shake
     const isCoop = this.currentMode === 'coop';
     const baseY = isCoop ? 8.8 : 3.8;
@@ -898,6 +1118,11 @@ export class WorldRenderer {
       rig.root.rotation.y = Math.sin(t * 0.48 + phaseOffset) * 0.18;
       rig.root.rotation.x = Math.cos(t * 0.36 + phaseOffset) * 0.045;
       rig.root.rotation.z = Math.sin(t * 0.3 + phaseOffset) * 0.024;
+
+      // Flickering dungeon wall torches
+      rig.torchMats.forEach((tm, idx) => {
+        tm.emissiveIntensity = 1.15 + Math.sin(t * 14 + idx * 2.1) * 0.35;
+      });
 
       // Gentle float on unsearched prop meshes
       rig.props.forEach((pv, i) => {
