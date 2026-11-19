@@ -52,8 +52,22 @@ interface ChamberRig {
   spotlightMixer: THREE.AnimationMixer | null;
   spotlightShieldRing: THREE.Mesh;
   queueHolders: THREE.Group[];
+  queueWalkers: CrowdWalkerState[];
   queueUsers: Array<string | null>;
   queueMixers: Array<THREE.AnimationMixer | null>;
+}
+
+const MAX_CROWD_AVATARS = 24;
+
+interface CrowdWalkerState {
+  x: number;
+  z: number;
+  targetX: number;
+  targetZ: number;
+  speed: number;
+  pauseSec: number;
+  phase: number;
+  visitIdx: number;
 }
 
 const CORNER_COORDS: Record<PropCorner, [number, number]> = {
@@ -65,18 +79,40 @@ const CORNER_COORDS: Record<PropCorner, [number, number]> = {
   se: [2.15, 1.2],
 };
 
-const QUEUE_SLOTS: ReadonlyArray<{ x: number; z: number; rotY: number }> = [
-  { x: -1.05, z: 1.95, rotY: -0.22 },
-  { x: 1.05, z: 1.95, rotY: 0.22 },
-  { x: -1.8, z: 1.95, rotY: -0.32 },
-  { x: 1.8, z: 1.95, rotY: 0.32 },
-  { x: -0.8, z: 2.75, rotY: -0.15 },
-  { x: 0.8, z: 2.75, rotY: 0.15 },
-  { x: -1.52, z: 2.75, rotY: -0.25 },
-  { x: 1.52, z: 2.75, rotY: 0.25 },
-  { x: -2.25, z: 2.75, rotY: -0.35 },
-  { x: 2.25, z: 2.75, rotY: 0.35 },
-];
+const PROP_CORNERS: readonly PropCorner[] = ['nw', 'ne', 'mw', 'me', 'sw', 'se'];
+
+function pickWalkerTarget(idx: number, seed: number): { x: number; z: number } {
+  const hash = ((idx + 1) * 73 + (seed + 1) * 131) >>> 0;
+  let x: number;
+  let z: number;
+
+  if (seed % 2 === 0) {
+    const corner = PROP_CORNERS[(idx + Math.floor(seed / 2)) % PROP_CORNERS.length];
+    const [px, pz] = CORNER_COORDS[corner];
+    x = px + (px < 0 ? 0.56 : -0.56) + (((hash % 5) - 2) * 0.08);
+    z = pz + ((((hash >> 3) % 5) - 2) * 0.14);
+  } else if (hash % 3 === 0) {
+    // Open forecourt area in front of carpet
+    const fracX = ((hash % 100) / 99) * 2 - 1;
+    const fracZ = ((hash >> 7) % 100) / 99;
+    x = fracX * 2.25;
+    z = 1.65 + fracZ * 1.2;
+  } else {
+    // Left / right side aisles keeping center bridge clear
+    const side = (idx + seed) % 2 === 0 ? -1 : 1;
+    const fracX = ((hash >> 2) % 100) / 99;
+    const fracZ = ((hash >> 9) % 100) / 99;
+    x = side * (0.95 + fracX * 1.4);
+    z = -1.6 + fracZ * 4.15;
+  }
+
+  x = Math.max(-2.45, Math.min(2.45, x));
+  z = Math.max(-2.05, Math.min(2.95, z));
+  if (Math.abs(x) < 0.72 && z < 0.4) {
+    x = x < 0 ? -0.78 : 0.78;
+  }
+  return { x, z };
+}
 
 function pickClip(clips: THREE.AnimationClip[], keywords: string[]): THREE.AnimationClip | undefined {
   for (const kw of keywords) {
@@ -432,31 +468,42 @@ export class WorldRenderer {
       new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
     );
     const spotlightShieldRing = new THREE.Mesh(
-      this.track(new THREE.RingGeometry(0.3, 0.4, 24)),
+      this.track(new THREE.RingGeometry(0.18, 0.25, 24)),
       shieldRingMat
     );
     spotlightShieldRing.rotation.x = -Math.PI / 2;
     spotlightShieldRing.position.y = 0.04;
     spotlightShieldRing.visible = false;
 
-    const spotlightLabel = this.createLabelSlot(1.6, 0.4);
-    spotlightLabel.sprite.position.set(0, 1.28, 0);
+    const spotlightLabel = this.createLabelSlot(1.25, 0.3);
+    spotlightLabel.sprite.position.set(0, 0.82, 0);
     spotlightHolder.add(spotlightShieldRing, spotlightLabel.sprite);
     this.mountFallbackHeroMesh(spotlightHolder, 0xfbbf24);
     floorGroup.add(spotlightHolder);
 
-    // 10 Amphitheater Queue Adventurers behind Spotlight
+    // 24 Tiny Roaming Crowd Adventurers
     const queueHolders: THREE.Group[] = [];
-    for (let i = 0; i < QUEUE_SLOTS.length; i++) {
+    const queueWalkers: CrowdWalkerState[] = [];
+    for (let i = 0; i < MAX_CROWD_AVATARS; i++) {
       const qh = new THREE.Group();
-      const slot = QUEUE_SLOTS[i];
-      qh.position.set(slot.x, 0.04, slot.z);
-      qh.rotation.y = slot.rotY;
+      const startPos = pickWalkerTarget(i, 1);
+      const nextTarget = pickWalkerTarget(i, 2);
+      qh.position.set(startPos.x, 0.04, startPos.z);
       qh.scale.setScalar(1.0);
       qh.visible = false;
       this.mountFallbackHeroMesh(qh, 0x60a5fa);
       floorGroup.add(qh);
       queueHolders.push(qh);
+      queueWalkers.push({
+        x: startPos.x,
+        z: startPos.z,
+        targetX: nextTarget.x,
+        targetZ: nextTarget.z,
+        speed: 1.05 + (i % 5) * 0.16,
+        pauseSec: (i % 4) * 0.25,
+        phase: i * 1.37,
+        visitIdx: 3,
+      });
     }
 
     // Rising Hazard Fluid Plane (Water / Lava / Mist)
@@ -510,8 +557,9 @@ export class WorldRenderer {
       spotlightMixer: null,
       spotlightShieldRing,
       queueHolders,
-      queueUsers: Array(QUEUE_SLOTS.length).fill(null) as Array<string | null>,
-      queueMixers: Array(QUEUE_SLOTS.length).fill(null) as Array<THREE.AnimationMixer | null>,
+      queueWalkers,
+      queueUsers: Array(MAX_CROWD_AVATARS).fill(null) as Array<string | null>,
+      queueMixers: Array(MAX_CROWD_AVATARS).fill(null) as Array<THREE.AnimationMixer | null>,
     };
   }
 
@@ -521,7 +569,7 @@ export class WorldRenderer {
 
     const g = new THREE.Group();
     g.userData.isHeroModel = true;
-    g.scale.setScalar(0.55);
+    g.scale.setScalar(0.32);
     const body = new THREE.Mesh(
       this.track(new THREE.CapsuleGeometry(0.18, 0.28, 6, 12)),
       this.track(new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.6 }))
@@ -609,7 +657,8 @@ export class WorldRenderer {
     holder: THREE.Group,
     cls: HeroClass,
     scale: number,
-    prevMixer: THREE.AnimationMixer | null
+    prevMixer: THREE.AnimationMixer | null,
+    preferWalkClip = false
   ): THREE.AnimationMixer | null {
     prevMixer?.stopAllAction();
     const existing = holder.children.find((c) => c.userData?.isHeroModel);
@@ -627,7 +676,12 @@ export class WorldRenderer {
     clone.rotation.y = Math.PI; // Face toward the back Vault Door / lock!
     holder.add(clone);
 
-    const clip = pickClip(tpl.animations, ['idle_a', 'idle']);
+    const clip = pickClip(
+      tpl.animations,
+      preferWalkClip
+        ? ['running_a', 'walking_a', 'run', 'walk', 'idle_a', 'idle']
+        : ['idle_a', 'idle']
+    );
     if (!clip) return null;
     const mixer = new THREE.AnimationMixer(clone);
     mixer.clipAction(clip).play();
@@ -738,7 +792,7 @@ export class WorldRenderer {
       if (rig.spotlightUser !== state.spotlightPlayer || rig.spotlightClass !== cls) {
         rig.spotlightUser = state.spotlightPlayer;
         rig.spotlightClass = cls;
-        rig.spotlightMixer = this.swapHeroModel(rig.spotlightHolder, cls, 0.44, rig.spotlightMixer);
+        rig.spotlightMixer = this.swapHeroModel(rig.spotlightHolder, cls, 0.24, rig.spotlightMixer, true);
       }
       const shielded = state.shieldedPlayers.includes(state.spotlightPlayer);
       rig.spotlightShieldRing.visible = shielded;
@@ -752,8 +806,8 @@ export class WorldRenderer {
       rig.spotlightHolder.visible = false;
     }
 
-    // Up-Next Amphitheater Crowd Gallery (up to 10 visible behind spotlight)
-    for (let q = 0; q < QUEUE_SLOTS.length; q++) {
+    // 24 Tiny Roaming Crowd Gallery
+    for (let q = 0; q < MAX_CROWD_AVATARS; q++) {
       const qUser = state.upNext[q] ?? null;
       const qh = rig.queueHolders[q];
       if (!qUser) {
@@ -763,7 +817,13 @@ export class WorldRenderer {
       qh.visible = true;
       if (rig.queueUsers[q] !== qUser) {
         rig.queueUsers[q] = qUser;
-        rig.queueMixers[q] = this.swapHeroModel(qh, pickClassForName(qUser), 0.3, rig.queueMixers[q]);
+        rig.queueMixers[q] = this.swapHeroModel(
+          qh,
+          pickClassForName(qUser),
+          0.18,
+          rig.queueMixers[q],
+          true
+        );
       }
     }
 
@@ -827,7 +887,7 @@ export class WorldRenderer {
       const ratio = snap?.hazardRatio ?? 0;
       rig.hazardMesh.position.y = -0.32 + ratio * 1.55 + Math.sin(t * 2.5) * 0.03;
 
-      // Spotlight zap shake
+      // Spotlight active lock pacing, bridge advancing, getaway sprint & zap shake
       const chamber =
         rig.team === 'coop'
           ? snap?.chambers.coop
@@ -835,7 +895,89 @@ export class WorldRenderer {
             ? snap?.chambers.red
             : snap?.chambers.blue;
       const isZapped = chamber?.lastEffect === 'zap' && Date.now() - chamber.lastEffectAtMs < 650;
-      rig.spotlightHolder.position.y = isZapped ? 0.35 + Math.abs(Math.sin(t * 28)) * 0.45 : 0.04;
+
+      let spotTargetX = Math.sin(t * 2.2) * 0.22;
+      let spotTargetZ = 0.2 + Math.cos(t * 1.8) * 0.08;
+      if (snap?.phase === 'getaway' || (snap?.winnerTeam !== null && snap?.winnerTeam === rig.team)) {
+        spotTargetX = 0;
+        spotTargetZ = -2.8;
+      } else if (chamber?.lockStage === 3 && chamber.bridgeStep > 0) {
+        spotTargetX = 0;
+        spotTargetZ = -0.55 - (chamber.bridgeStep - 1) * 0.56;
+      }
+      const spotLerp = Math.min(1, dtSec * 5);
+      const prevSpotX = rig.spotlightHolder.position.x;
+      rig.spotlightHolder.position.x += (spotTargetX - prevSpotX) * spotLerp;
+      rig.spotlightHolder.position.z += (spotTargetZ - rig.spotlightHolder.position.z) * spotLerp;
+      rig.spotlightHolder.rotation.y = (spotTargetX - prevSpotX) * -0.8;
+      rig.spotlightHolder.position.y = isZapped
+        ? 0.35 + Math.abs(Math.sin(t * 28)) * 0.45
+        : 0.04 + Math.abs(Math.sin(t * 9)) * 0.04;
+
+      // 24 Tiny Crowd Walkers roaming props, aisles & sprinting on Getaway
+      const isDash = snap?.phase === 'getaway' || (snap?.winnerTeam !== null && snap?.winnerTeam === rig.team);
+      for (let q = 0; q < rig.queueHolders.length; q++) {
+        const qh = rig.queueHolders[q];
+        if (!qh.visible) continue;
+        const w = rig.queueWalkers[q];
+
+        if (isDash) {
+          w.targetX = ((q % 3) - 1) * 0.35;
+          w.targetZ = -2.95;
+          w.pauseSec = 0;
+        }
+
+        if (w.pauseSec > 0) {
+          w.pauseSec -= dtSec;
+          qh.position.set(w.x, 0.04 + Math.sin(t * 4 + w.phase) * 0.015, w.z);
+          qh.rotation.z = 0;
+          continue;
+        }
+
+        const dx = w.targetX - w.x;
+        const dz = w.targetZ - w.z;
+        const dist = Math.hypot(dx, dz);
+
+        if (dist < 0.1) {
+          if (!isDash) {
+            w.pauseSec = 0.35 + ((q * 7 + w.visitIdx) % 10) * 0.08;
+            w.visitIdx++;
+            const nextPt = pickWalkerTarget(q, w.visitIdx);
+            w.targetX = nextPt.x;
+            w.targetZ = nextPt.z;
+          }
+          continue;
+        }
+
+        const moveStep = Math.min(dist, w.speed * dtSec);
+        w.x += (dx / dist) * moveStep;
+        w.z += (dz / dist) * moveStep;
+
+        // Gentle personal-space separation from neighbors
+        for (let other = 0; other < rig.queueHolders.length; other++) {
+          if (other === q || !rig.queueHolders[other].visible) continue;
+          const ow = rig.queueWalkers[other];
+          const sx = w.x - ow.x;
+          const sz = w.z - ow.z;
+          const d2 = sx * sx + sz * sz;
+          if (d2 > 0.0001 && d2 < 0.1024) {
+            const d = Math.sqrt(d2);
+            const push = (0.32 - d) * 0.45;
+            w.x += (sx / d) * push;
+            w.z += (sz / d) * push;
+          }
+        }
+
+        w.x = Math.max(-2.5, Math.min(2.5, w.x));
+        w.z = Math.max(isDash ? -3.0 : -2.1, Math.min(3.05, w.z));
+        if (!isDash && Math.abs(w.x) < 0.68 && w.z < 0.35) {
+          w.x = w.x < 0 ? -0.72 : 0.72;
+        }
+
+        qh.position.set(w.x, 0.04 + Math.abs(Math.sin(t * 11 + w.phase)) * 0.055, w.z);
+        qh.rotation.y = Math.atan2(-dx, -dz);
+        qh.rotation.z = Math.sin(t * 11 + w.phase) * 0.07;
+      }
     }
   }
 

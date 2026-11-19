@@ -66,7 +66,7 @@ describe('Locklet Server, HTTP/WS Bridge, 3D Renderer & XSS-Safe StreamHUD', () 
     const crowdSnap = (await (await fetch(`${info.httpUrl}/api/snapshot`)).json()) as any;
     expect(crowdSnap.activePlayersCount).toBe(100);
     expect(crowdSnap.chambers.coop.poolCount).toBe(100);
-    expect(crowdSnap.chambers.coop.upNext).toHaveLength(10);
+    expect(crowdSnap.chambers.coop.upNext).toHaveLength(24);
     ws.close();
 
     // Verify /sim/* rejects with 403 when liveMode (tiktokUsername) is set without allowSimRoutes
