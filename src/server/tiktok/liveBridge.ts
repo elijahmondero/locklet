@@ -469,6 +469,18 @@ export class LockletGameServer {
         this.sendJson(res, 200, { ok: true });
         return;
       }
+      if (pathname === '/sim/crowd') {
+        const rawCount = Number(body.count ?? 100);
+        const count = Math.max(1, Math.min(500, Number.isFinite(rawCount) ? Math.floor(rawCount) : 100));
+        const nowMs = this.now();
+        for (let i = 1; i <= count; i++) {
+          this.engine.handleMember(`Viewer${i}`, nowMs);
+        }
+        this.broadcastSnapshot();
+        const snap = this.getSnapshot(nowMs);
+        this.sendJson(res, 200, { ok: true, added: count, activePlayersCount: snap.activePlayersCount });
+        return;
+      }
     }
 
     this.sendJson(res, 404, { ok: false, error: 'Not found' });

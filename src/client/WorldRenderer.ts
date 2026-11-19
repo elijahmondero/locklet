@@ -66,10 +66,16 @@ const CORNER_COORDS: Record<PropCorner, [number, number]> = {
 };
 
 const QUEUE_SLOTS: ReadonlyArray<{ x: number; z: number; rotY: number }> = [
-  { x: -1.05, z: 1.95, rotY: -0.25 },
-  { x: 1.05, z: 1.95, rotY: 0.25 },
-  { x: -1.85, z: 2.55, rotY: -0.35 },
-  { x: 1.85, z: 2.55, rotY: 0.35 },
+  { x: -1.05, z: 1.95, rotY: -0.22 },
+  { x: 1.05, z: 1.95, rotY: 0.22 },
+  { x: -1.8, z: 1.95, rotY: -0.32 },
+  { x: 1.8, z: 1.95, rotY: 0.32 },
+  { x: -0.8, z: 2.75, rotY: -0.15 },
+  { x: 0.8, z: 2.75, rotY: 0.15 },
+  { x: -1.52, z: 2.75, rotY: -0.25 },
+  { x: 1.52, z: 2.75, rotY: 0.25 },
+  { x: -2.25, z: 2.75, rotY: -0.35 },
+  { x: 2.25, z: 2.75, rotY: 0.35 },
 ];
 
 function pickClip(clips: THREE.AnimationClip[], keywords: string[]): THREE.AnimationClip | undefined {
@@ -439,9 +445,9 @@ export class WorldRenderer {
     this.mountFallbackHeroMesh(spotlightHolder, 0xfbbf24);
     floorGroup.add(spotlightHolder);
 
-    // 4 Queue Adventurers behind Spotlight
+    // 10 Amphitheater Queue Adventurers behind Spotlight
     const queueHolders: THREE.Group[] = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < QUEUE_SLOTS.length; i++) {
       const qh = new THREE.Group();
       const slot = QUEUE_SLOTS[i];
       qh.position.set(slot.x, 0.04, slot.z);
@@ -504,8 +510,8 @@ export class WorldRenderer {
       spotlightMixer: null,
       spotlightShieldRing,
       queueHolders,
-      queueUsers: [null, null, null, null],
-      queueMixers: [null, null, null, null],
+      queueUsers: Array(QUEUE_SLOTS.length).fill(null) as Array<string | null>,
+      queueMixers: Array(QUEUE_SLOTS.length).fill(null) as Array<THREE.AnimationMixer | null>,
     };
   }
 
@@ -746,8 +752,8 @@ export class WorldRenderer {
       rig.spotlightHolder.visible = false;
     }
 
-    // Up-Next Queue models
-    for (let q = 0; q < 4; q++) {
+    // Up-Next Amphitheater Crowd Gallery (up to 10 visible behind spotlight)
+    for (let q = 0; q < QUEUE_SLOTS.length; q++) {
       const qUser = state.upNext[q] ?? null;
       const qh = rig.queueHolders[q];
       if (!qUser) {
@@ -757,7 +763,7 @@ export class WorldRenderer {
       qh.visible = true;
       if (rig.queueUsers[q] !== qUser) {
         rig.queueUsers[q] = qUser;
-        rig.queueMixers[q] = this.swapHeroModel(qh, pickClassForName(qUser), 0.36, rig.queueMixers[q]);
+        rig.queueMixers[q] = this.swapHeroModel(qh, pickClassForName(qUser), 0.3, rig.queueMixers[q]);
       }
     }
 

@@ -50,6 +50,23 @@ describe('Locklet Server, HTTP/WS Bridge, 3D Renderer & XSS-Safe StreamHUD', () 
     expect(snapJson.activeMode).toBe('versus');
     expect(snapJson.chambers.red).toBeDefined();
     expect(snapJson.chambers.blue).toBeDefined();
+
+    // Simulate 100 concurrent viewers -> 10 visible upNext gallery + accurate poolCount
+    await fetch(`${info.httpUrl}/sim/mode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'coop' }),
+    });
+    const crowdRes = await fetch(`${info.httpUrl}/sim/crowd`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: 100 }),
+    });
+    expect(crowdRes.status).toBe(200);
+    const crowdSnap = (await (await fetch(`${info.httpUrl}/api/snapshot`)).json()) as any;
+    expect(crowdSnap.activePlayersCount).toBe(100);
+    expect(crowdSnap.chambers.coop.poolCount).toBe(100);
+    expect(crowdSnap.chambers.coop.upNext).toHaveLength(10);
     ws.close();
 
     // Verify /sim/* rejects with 403 when liveMode (tiktokUsername) is set without allowSimRoutes

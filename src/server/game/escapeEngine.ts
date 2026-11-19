@@ -1027,11 +1027,11 @@ export class EscapeRoomEngine {
     const idx = chamber.spotlightPlayer ? chamber.pool.indexOf(chamber.spotlightPlayer) : -1;
     const rotatingQueue: string[] = [];
     if (chamber.pool.length > 1 && idx >= 0) {
-      for (let i = 1; i < chamber.pool.length && rotatingQueue.length < 4; i++) {
+      for (let i = 1; i < chamber.pool.length && rotatingQueue.length < 10; i++) {
         rotatingQueue.push(chamber.pool[(idx + i) % chamber.pool.length]);
       }
     }
-    const mergedUpNext = Array.from(new Set([...chamber.vipQueue, ...rotatingQueue])).slice(0, 4);
+    const mergedUpNext = Array.from(new Set([...chamber.vipQueue, ...rotatingQueue])).slice(0, 10);
 
     return {
       team: chamber.team,
@@ -1066,6 +1066,7 @@ export class EscapeRoomEngine {
       spotlightClass: chamber.spotlightClass,
       turnExpiresAtMs: chamber.turnExpiresAtMs,
       upNext: mergedUpNext,
+      poolCount: chamber.pool.length,
       vipQueue: [...chamber.vipQueue],
       shieldedPlayers: Array.from(chamber.shieldedPlayers),
       blackoutUntilMs: chamber.blackoutUntilMs,

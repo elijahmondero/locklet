@@ -490,7 +490,12 @@ export class StreamHUD {
     tapBtn.addEventListener('click', () => {
       void this.postApi('/sim/like', { username: this.getActiveUsername(), likeCount: 25 });
     });
-    giftRow.appendChild(tapBtn);
+    const crowdBtn = el('button', 'lk-btn', '🤖 +100 Crowd');
+    crowdBtn.type = 'button';
+    crowdBtn.addEventListener('click', () => {
+      void this.postApi('/sim/crowd', { count: 100 });
+    });
+    giftRow.append(tapBtn, crowdBtn);
 
     playDock.append(this.propSearchRowEl, this.quickActionRowEl, chatRow, giftRow);
     hudBottom.appendChild(playDock);
@@ -583,7 +588,7 @@ export class StreamHUD {
         : `${snapshot.remainingSec}s`;
     const potText = snapshot.cursedDoublePot ? `😈 2x ${snapshot.potGold}g` : `🏆 ${snapshot.potGold}g`;
     this.themeTitleEl.textContent = `${snapshot.theme.emoji} ${snapshot.theme.label} · ${snapshot.theme.hazardName}`;
-    this.timerBadgeEl.textContent = `${clock} · ${potText}`;
+    this.timerBadgeEl.textContent = `${clock} · ${potText} · 👥 ${snapshot.activePlayersCount}`;
     this.hazardCardEl.classList.toggle('cursed', snapshot.cursedDoublePot);
     this.hazardFillEl.style.width = `${Math.round(snapshot.hazardRatio * 100)}%`;
 
@@ -652,7 +657,9 @@ export class StreamHUD {
   private buildCoopPanel(ch: ChamberPublicState): HTMLElement {
     const panel = el('div', 'lock-panel');
     const spotRow = el('div', 'spotlight-row');
-    const queueStr = ch.upNext.length > 0 ? ` · Next: ${ch.upNext.slice(0, 3).join(', ')}` : '';
+    const shownNext = ch.upNext.slice(0, 3);
+    const extraCount = (ch.poolCount ?? 0) > 4 ? ` (+${(ch.poolCount ?? 0) - 4} more)` : '';
+    const queueStr = shownNext.length > 0 ? ` · Next: ${shownNext.join(', ')}${extraCount}` : '';
     spotRow.append(
       el('span', undefined, `🎯 Lock: ${ch.spotlightPlayer ?? 'Open (Type now!)'}${queueStr}`),
       el('span', 'stage-pill', `Lock ${ch.lockStage}/3`)
@@ -682,7 +689,8 @@ export class StreamHUD {
     const card = el('div', `team-card ${team}`);
     const head = el('div', 'spotlight-row');
     head.append(el('span', undefined, title), el('span', 'stage-pill', `L${ch.lockStage}/3`));
-    const spot = el('div', undefined, `🎯 ${ch.spotlightPlayer ?? 'Join team!'}`);
+    const inCell = (ch.poolCount ?? 0) > 1 ? ` (+${(ch.poolCount ?? 0) - 1} in cell)` : '';
+    const spot = el('div', undefined, `🎯 ${ch.spotlightPlayer ?? 'Join team!'}${inCell}`);
     const lock = el('div', 'lock-readout', this.formatLockReadout(ch));
     card.append(head, spot, lock);
     return card;
