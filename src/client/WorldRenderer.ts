@@ -1141,9 +1141,12 @@ export class WorldRenderer {
       const targetFloorY = dropped ? -0.82 : 0;
       rig.floorGroup.position.y += (targetFloorY - rig.floorGroup.position.y) * Math.min(1, dtSec * 6);
 
-      // Rising hazard fluid plane
+      // Rising hazard fluid plane calibrated to miniature character height (~0.47u):
+      // stays in under-floor pit early, puddles at ankle height midway (ratio=0.5 -> y≈0.02),
+      // rises to chest height in final 15s, and only submerges the room at 0s (ratio=1.0 -> y≈0.54).
       const ratio = snap?.hazardRatio ?? 0;
-      rig.hazardMesh.position.y = -0.32 + ratio * 1.55 + Math.sin(t * 2.5) * 0.03;
+      rig.hazardMesh.position.y =
+        -0.24 + ratio * 0.42 + Math.pow(ratio, 3) * 0.36 + Math.sin(t * 2.5) * 0.015;
 
       // Spotlight active lock pacing, bridge advancing, getaway sprint & zap shake
       const chamber =
