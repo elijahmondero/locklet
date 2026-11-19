@@ -56,11 +56,18 @@ interface ChamberRig {
 }
 
 const CORNER_COORDS: Record<'nw' | 'ne' | 'sw' | 'se', [number, number]> = {
-  nw: [-2.15, -1.65],
-  ne: [2.15, -1.65],
-  sw: [-2.25, 1.35],
-  se: [2.25, 1.35],
+  nw: [-2.1, -1.75],
+  ne: [2.1, -1.75],
+  sw: [-2.15, 0.95],
+  se: [2.15, 0.95],
 };
+
+const QUEUE_SLOTS: ReadonlyArray<{ x: number; z: number; rotY: number }> = [
+  { x: -1.05, z: 1.55, rotY: -0.25 },
+  { x: 1.05, z: 1.55, rotY: 0.25 },
+  { x: -1.75, z: 2.05, rotY: -0.35 },
+  { x: 1.75, z: 2.05, rotY: 0.35 },
+];
 
 function pickClip(clips: THREE.AnimationClip[], keywords: string[]): THREE.AnimationClip | undefined {
   for (const kw of keywords) {
@@ -112,16 +119,16 @@ export class WorldRenderer {
     const height = options.height || container.clientHeight || 960;
 
     this.camera = new THREE.PerspectiveCamera(48, 9 / 16, 0.1, 120);
-    this.camera.position.set(0, 7.6, 15.8);
-    this.camera.lookAt(0, 0.85, 0);
+    this.camera.position.set(0, 7.4, 15.2);
+    this.camera.lookAt(0, 0.75, 0);
 
     this.initRenderer(width, height);
     this.buildLights();
     this.buildSky();
 
-    this.coopRig = this.createChamberRig('coop', 0, 1.0);
-    this.redRig = this.createChamberRig('red', -2.65, 0.62);
-    this.blueRig = this.createChamberRig('blue', 2.65, 0.62);
+    this.coopRig = this.createChamberRig('coop', 0, 0.96);
+    this.redRig = this.createChamberRig('red', -1.78, 0.52);
+    this.blueRig = this.createChamberRig('blue', 1.78, 0.52);
     this.redRig.root.visible = false;
     this.blueRig.root.visible = false;
 
@@ -239,24 +246,31 @@ export class WorldRenderer {
 
     const { ctx, canvas } = slot;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 30px "Segoe UI", system-ui, sans-serif';
+    const clippedText = text.slice(0, 24);
+    const measured = typeof ctx.measureText === 'function' ? ctx.measureText(clippedText).width : 260;
+    const pillW = Math.min(canvas.width - 24, Math.max(170, measured + 52));
+    const pillX = (canvas.width - pillW) / 2;
+    const pillY = 22;
+    const pillH = canvas.height - 44;
+
     ctx.fillStyle = bg;
     ctx.strokeStyle = border;
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 4;
     if (typeof ctx.roundRect === 'function') {
       ctx.beginPath();
-      ctx.roundRect(12, 16, canvas.width - 24, canvas.height - 32, 26);
+      ctx.roundRect(pillX, pillY, pillW, pillH, 22);
       ctx.fill();
       ctx.stroke();
     } else {
-      ctx.fillRect(12, 16, canvas.width - 24, canvas.height - 32);
-      ctx.strokeRect(12, 16, canvas.width - 24, canvas.height - 32);
+      ctx.fillRect(pillX, pillY, pillW, pillH);
+      ctx.strokeRect(pillX, pillY, pillW, pillH);
     }
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 34px "Segoe UI", system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text.slice(0, 26), canvas.width / 2, canvas.height / 2, canvas.width - 48);
+    ctx.fillText(clippedText, canvas.width / 2, canvas.height / 2, pillW - 28);
     slot.texture.needsUpdate = true;
   }
 
@@ -355,13 +369,13 @@ export class WorldRenderer {
           roughness: 0.4,
         })
       );
-      const ring = new THREE.Mesh(this.track(new THREE.TorusGeometry(0.42, 0.05, 8, 24)), pedMat);
+      const ring = new THREE.Mesh(this.track(new THREE.TorusGeometry(0.32, 0.04, 8, 24)), pedMat);
       ring.rotation.x = Math.PI / 2;
       ring.position.y = 0.05;
 
       const meshHolder = new THREE.Group();
       const fallbackCrate = new THREE.Mesh(
-        this.track(new THREE.BoxGeometry(0.55, 0.55, 0.55)),
+        this.track(new THREE.BoxGeometry(0.38, 0.38, 0.38)),
         this.track(
           new THREE.MeshStandardMaterial({
             color: idx % 2 === 0 ? 0xd97706 : 0x7c3aed,
@@ -369,11 +383,11 @@ export class WorldRenderer {
           })
         )
       );
-      fallbackCrate.position.y = 0.3;
+      fallbackCrate.position.y = 0.21;
       meshHolder.add(fallbackCrate);
 
-      const label = this.createLabelSlot(2.15, 0.54);
-      label.sprite.position.set(0, 1.32, 0);
+      const label = this.createLabelSlot(1.35, 0.34);
+      label.sprite.position.set(0, 0.95, 0);
       pGroup.add(ring, meshHolder, label.sprite);
       floorGroup.add(pGroup);
       return { group: pGroup, beaconMat: pedMat, meshHolder, label, corner };
@@ -381,20 +395,20 @@ export class WorldRenderer {
 
     // Spotlight Hero standing at the lock
     const spotlightHolder = new THREE.Group();
-    spotlightHolder.position.set(0, 0.04, 0.45);
+    spotlightHolder.position.set(0, 0.04, 0.15);
     const shieldRingMat = this.track(
       new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
     );
     const spotlightShieldRing = new THREE.Mesh(
-      this.track(new THREE.RingGeometry(0.52, 0.68, 24)),
+      this.track(new THREE.RingGeometry(0.3, 0.4, 24)),
       shieldRingMat
     );
     spotlightShieldRing.rotation.x = -Math.PI / 2;
     spotlightShieldRing.position.y = 0.04;
     spotlightShieldRing.visible = false;
 
-    const spotlightLabel = this.createLabelSlot(2.5, 0.62);
-    spotlightLabel.sprite.position.set(0, 1.95, 0);
+    const spotlightLabel = this.createLabelSlot(1.55, 0.38);
+    spotlightLabel.sprite.position.set(0, 1.18, 0);
     spotlightHolder.add(spotlightShieldRing, spotlightLabel.sprite);
     this.mountFallbackHeroMesh(spotlightHolder, 0xfbbf24);
     floorGroup.add(spotlightHolder);
@@ -403,10 +417,10 @@ export class WorldRenderer {
     const queueHolders: THREE.Group[] = [];
     for (let i = 0; i < 4; i++) {
       const qh = new THREE.Group();
-      const row = Math.floor(i / 2);
-      const col = i % 2 === 0 ? -0.58 : 0.58;
-      qh.position.set(col, 0.04, 1.35 + row * 0.72);
-      qh.scale.setScalar(0.75);
+      const slot = QUEUE_SLOTS[i];
+      qh.position.set(slot.x, 0.04, slot.z);
+      qh.rotation.y = slot.rotY;
+      qh.scale.setScalar(1.0);
       qh.visible = false;
       this.mountFallbackHeroMesh(qh, 0x60a5fa);
       floorGroup.add(qh);
@@ -475,6 +489,7 @@ export class WorldRenderer {
 
     const g = new THREE.Group();
     g.userData.isHeroModel = true;
+    g.scale.setScalar(0.55);
     const body = new THREE.Mesh(
       this.track(new THREE.CapsuleGeometry(0.18, 0.28, 6, 12)),
       this.track(new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.6 }))
@@ -546,7 +561,7 @@ export class WorldRenderer {
           const tpl = this.worldPropTemplates[idx % this.worldPropTemplates.length];
           pv.meshHolder.clear();
           const clone = tpl.clone(true);
-          clone.scale.setScalar(0.55);
+          clone.scale.setScalar(0.38);
           pv.meshHolder.add(clone);
         });
       }
@@ -597,6 +612,12 @@ export class WorldRenderer {
       this.coopRig.root.visible = isCoop;
       this.redRig.root.visible = !isCoop;
       this.blueRig.root.visible = !isCoop;
+      if (isCoop) {
+        this.camera.position.set(0, 7.4, 15.2);
+      } else {
+        this.camera.position.set(0, 7.8, 16.6);
+      }
+      this.camera.lookAt(0, 0.75, 0);
     }
 
     // 2. Apply rotating room theme palette
@@ -669,7 +690,7 @@ export class WorldRenderer {
       if (rig.spotlightUser !== state.spotlightPlayer || rig.spotlightClass !== cls) {
         rig.spotlightUser = state.spotlightPlayer;
         rig.spotlightClass = cls;
-        rig.spotlightMixer = this.swapHeroModel(rig.spotlightHolder, cls, 0.72, rig.spotlightMixer);
+        rig.spotlightMixer = this.swapHeroModel(rig.spotlightHolder, cls, 0.38, rig.spotlightMixer);
       }
       const shielded = state.shieldedPlayers.includes(state.spotlightPlayer);
       rig.spotlightShieldRing.visible = shielded;
@@ -694,7 +715,7 @@ export class WorldRenderer {
       qh.visible = true;
       if (rig.queueUsers[q] !== qUser) {
         rig.queueUsers[q] = qUser;
-        rig.queueMixers[q] = this.swapHeroModel(qh, pickClassForName(qUser), 0.7, rig.queueMixers[q]);
+        rig.queueMixers[q] = this.swapHeroModel(qh, pickClassForName(qUser), 0.31, rig.queueMixers[q]);
       }
     }
 
