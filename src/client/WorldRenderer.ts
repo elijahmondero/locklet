@@ -171,9 +171,9 @@ export class WorldRenderer {
     this.buildLights();
     this.buildSky();
 
-    this.coopRig = this.createChamberRig('coop', 0, -0.85, 0.9);
-    this.redRig = this.createChamberRig('red', 0, 1.15, 0.7);
-    this.blueRig = this.createChamberRig('blue', 0, -2.35, 0.7);
+    this.coopRig = this.createChamberRig('coop', 0, -0.85, 0.85);
+    this.redRig = this.createChamberRig('red', 0, 1.15, 0.67);
+    this.blueRig = this.createChamberRig('blue', 0, -2.35, 0.67);
     this.redRig.root.visible = false;
     this.blueRig.root.visible = false;
 
@@ -861,10 +861,43 @@ export class WorldRenderer {
     const t = this.elapsedSec;
     const snap = this.latestSnapshot;
 
+    // Gentle orbital camera drift, tilt, breathing zoom, unlock zoom & zap shake
+    const isCoop = this.currentMode === 'coop';
+    const baseY = isCoop ? 8.8 : 3.8;
+    const baseZ = isCoop ? 11.4 : 16.4;
+    const lookY = isCoop ? 0.45 : -0.05;
+    const lookZ = isCoop ? 0.15 : 0;
+
+    const orbitX = Math.sin(t * 0.42) * (isCoop ? 0.85 : 0.75);
+    const tiltY = Math.cos(t * 0.34) * 0.42;
+    let zoomZ = Math.sin(t * 0.55) * (isCoop ? 0.78 : 0.65);
+
+    const activeCh = isCoop ? snap?.chambers.coop : snap?.chambers.red;
+    const recentUnlock =
+      activeCh?.lastEffect === 'unlock' && Date.now() - activeCh.lastEffectAtMs < 1300;
+    if (snap?.phase === 'getaway' || recentUnlock) {
+      zoomZ -= isCoop ? 1.25 : 0.9;
+    }
+
+    const anyZap = [snap?.chambers.coop, snap?.chambers.red, snap?.chambers.blue].some(
+      (c) => c?.lastEffect === 'zap' && Date.now() - c.lastEffectAtMs < 550
+    );
+    const shakeX = anyZap ? Math.sin(t * 58) * 0.16 : 0;
+    const shakeY = anyZap ? Math.cos(t * 52) * 0.12 : 0;
+
+    this.camera.position.set(orbitX + shakeX, baseY + tiltY + shakeY, baseZ + zoomZ);
+    this.camera.lookAt(orbitX * 0.18, lookY + tiltY * 0.15, lookZ);
+
     for (const rig of [this.coopRig, this.redRig, this.blueRig]) {
       if (!rig.root.visible) continue;
       rig.spotlightMixer?.update(dtSec);
       for (const qm of rig.queueMixers) qm?.update(dtSec);
+
+      // Slow turntable rotation & gentle 3D sway/tilt on the room diorama
+      const phaseOffset = rig.team === 'blue' ? 0.85 : 0;
+      rig.root.rotation.y = Math.sin(t * 0.48 + phaseOffset) * 0.18;
+      rig.root.rotation.x = Math.cos(t * 0.36 + phaseOffset) * 0.045;
+      rig.root.rotation.z = Math.sin(t * 0.3 + phaseOffset) * 0.024;
 
       // Gentle float on unsearched prop meshes
       rig.props.forEach((pv, i) => {
@@ -970,8 +1003,11 @@ export class WorldRenderer {
 
         w.x = Math.max(-2.5, Math.min(2.5, w.x));
         w.z = Math.max(isDash ? -3.0 : -2.1, Math.min(3.05, w.z));
-        if (!isDash && Math.abs(w.x) < 0.68 && w.z < 0.35) {
-          w.x = w.x < 0 ? -0.72 : 0.72;
+        if (!isDash && Math.abs(w.x) < 0.72 && w.z < 0.38) {
+          w.x = w.x < 0 ? -0.76 : 0.76;
+          if (w.targetX * w.x < 0 && w.targetZ < 0.5) {
+            w.targetZ = 1.65 + (q % 4) * 0.25;
+          }
         }
 
         qh.position.set(w.x, 0.04 + Math.abs(Math.sin(t * 11 + w.phase)) * 0.055, w.z);
