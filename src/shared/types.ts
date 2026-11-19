@@ -7,7 +7,8 @@ export type RoomThemeId =
   | 'haunted_study'
   | 'clockwork_vault';
 export type RoundPhase = 'playing' | 'getaway' | 'round_over';
-export type WireColor = 'red' | 'blue' | 'gold' | 'green';
+export type WireColor = 'red' | 'blue' | 'gold' | 'green' | 'purple' | 'white';
+export type PropCorner = 'nw' | 'ne' | 'mw' | 'me' | 'sw' | 'se';
 export type BridgeSide = 'L' | 'R';
 export type HeroClass = 'knight' | 'wizard' | 'rogue' | 'bard';
 
@@ -21,34 +22,39 @@ export interface RoomThemeMeta {
   hazardColor: number;
   ambientSkyTop: number;
   ambientSkyBottom: number;
-  props: [string, string, string, string];
+  props: [string, string, string, string, string, string];
 }
 
 export interface RoomPropView {
   id: string;
   name: string;
   emoji: string;
-  corner: 'nw' | 'ne' | 'sw' | 'se';
+  corner: PropCorner;
   searchedBy: string | null;
   clueText: string | null;
+  isTrap: boolean;
+  uvOnly: boolean;
 }
 
 export interface ChamberPublicState {
   team: TeamId;
   lockStage: 1 | 2 | 3;
-  // Lock 1 (4-wire fuse box)
+  // Lock 1 (6-wire fuse box with 2-strike overload)
   eliminatedWires: WireColor[];
+  wireStrikes: number;
   // Lock 2 (3-digit keypad)
   knownDigits: [string, string, string];
   minBound: number;
   maxBound: number;
   lastPinGuess: number | null;
   lastPinHint: 'HIGHER' | 'LOWER' | null;
-  // Lock 3 (3-step L/R trap bridge)
-  bridgeStep: number; // 0..3
-  revealedSteps: [BridgeSide | null, BridgeSide | null, BridgeSide | null];
-  // Room props & spotlight queue
+  // Lock 3 (4-step L/R memory bridge)
+  bridgeStep: number; // 0..4
+  revealedSteps: [BridgeSide | null, BridgeSide | null, BridgeSide | null, BridgeSide | null];
+  // Room props, riddles & spotlight queue
   props: RoomPropView[];
+  discoveredClues: string[];
+  exhaustedSearchers: string[];
   spotlightPlayer: string | null;
   spotlightClass: HeroClass;
   turnExpiresAtMs: number;

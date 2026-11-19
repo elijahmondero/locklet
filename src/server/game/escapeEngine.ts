@@ -1,8 +1,11 @@
 import {
   BLACKOUT_DURATION_MS,
+  BRIDGE_STEPS,
+  COOL_WIRES,
   CUT_LINE_GIFT_MIN_DIAMONDS,
   GETAWAY_DURATION_SEC,
   HERO_CLASSES,
+  MAX_WIRE_STRIKES,
   PROP_EMOJIS,
   ROOM_DURATION_SEC,
   ROOM_THEMES,
@@ -12,9 +15,12 @@ import {
   SHIELD_GIFT_MIN_DIAMONDS,
   TAP_BONUS_SEC,
   TAPS_PER_BOOST,
+  TRAP_PENALTY_SEC,
   TURN_DURATION_SEC,
   UV_GIFT_MIN_DIAMONDS,
+  WARM_WIRES,
   WIRE_COLORS,
+  ZAP_PENALTY_SEC,
 } from '../../shared/constants.js';
 import type {
   ActiveMode,
@@ -23,6 +29,7 @@ import type {
   GameModeSetting,
   HeroClass,
   PlayerStatsRecord,
+  PropCorner,
   RoomPropView,
   RoomSnapshotMessage,
   RoomThemeId,
@@ -35,8 +42,8 @@ interface InternalProp {
   id: string;
   name: string;
   emoji: string;
-  corner: 'nw' | 'ne' | 'sw' | 'se';
-  clueType: 'wires' | 'digit0' | 'digit2' | 'middle' | 'bridge0';
+  corner: PropCorner;
+  clueType: 'wire_riddle' | 'pin_riddle_a' | 'pin_riddle_b' | 'uv_secret' | 'trap';
   clueText: string;
   payloadValue: unknown;
   searchedBy: string | null;
@@ -47,18 +54,22 @@ interface InternalChamber {
   lockStage: 1 | 2 | 3;
   // Secret answers (never serialized into RoomSnapshotMessage!)
   secretWire: WireColor;
+  wireExclude: WireColor;
   secretPin: number; // 100..999
-  secretBridge: [BridgeSide, BridgeSide, BridgeSide];
+  secretBridge: [BridgeSide, BridgeSide, BridgeSide, BridgeSide];
   // Public state
   eliminatedWires: WireColor[];
+  wireStrikes: number;
   knownDigits: [string, string, string];
   minBound: number;
   maxBound: number;
   lastPinGuess: number | null;
   lastPinHint: 'HIGHER' | 'LOWER' | null;
   bridgeStep: number;
-  revealedSteps: [BridgeSide | null, BridgeSide | null, BridgeSide | null];
+  revealedSteps: [BridgeSide | null, BridgeSide | null, BridgeSide | null, BridgeSide | null];
   props: InternalProp[];
+  discoveredClues: string[];
+  searchedPlayersThisStage: Set<string>;
   spotlightPlayer: string | null;
   spotlightClass: HeroClass;
   turnExpiresAtMs: number;
@@ -244,25 +255,25 @@ export class EscapeRoomEngine {
     const d3 = Math.floor(clampUnit(this.rng()) * 10); // 0..9
     const secretPin = d1 * 100 + d2 * 10 + d3;
 
-    const secretBridge: [BridgeSide, BridgeSide, BridgeSide] = [
+    const secretBridge: [BridgeSide, BridgeSide, BridgeSide, BridgeSide] = [
+      this.rng() < 0.5 ? 'L' : 'R',
       this.rng() < 0.5 ? 'L' : 'R',
       this.rng() < 0.5 ? 'L' : 'R',
       this.rng() < 0.5 ? 'L' : 'R',
     ];
 
-    // Wrong wires for clue elimination
-    const wrongWires = WIRE_COLORS.filter((w) => w !== secretWire);
-    const badWire1 = wrongWires[Math.floor(clampUnit(this.rng()) * wrongWires.length)];
-    const remainingWrong = wrongWires.filter((w) => w !== badWire1);
-    const badWire2 = remainingWrong[Math.floor(clampUnit(this.rng()) * remainingWrong.length)];
+    const isWarm = (WARM_WIRES as readonly WireColor[]).includes(secretWire);
+    const wireGroup = isWarm ? WARM_WIRES : COOL_WIRES;
+    const groupWrong = wireGroup.filter((w) => w !== secretWire);
+    const wireExclude = groupWrong[Math.floor(clampUnit(this.rng()) * groupWrong.length)];
 
-    // Candidate digits for middle PIN position
-    const altD2 = (d2 + 1 + Math.floor(clampUnit(this.rng()) * 8)) % 10;
-    const pairSorted = [d2, altD2].sort((a, b) => a - b);
+    const digitSum = d1 + d2 + d3;
+    const altD1 = d1 === 9 ? 8 : d1 + 1;
+    const d1Pair = [d1, altD1].sort((a, b) => a - b);
 
-    // Shuffle prop positions across the 4 room corners every single round
+    // Shuffle all 6 prop positions across nw/ne/mw/me/sw/se every round
     const propNames = [...theme.props];
-    const corners: Array<'nw' | 'ne' | 'sw' | 'se'> = ['nw', 'ne', 'sw', 'se'];
+    const corners: PropCorner[] = ['nw', 'ne', 'mw', 'me', 'sw', 'se'];
     for (let i = propNames.length - 1; i > 0; i--) {
       const j = Math.floor(clampUnit(this.rng()) * (i + 1));
       [propNames[i], propNames[j]] = [propNames[j], propNames[i]];
@@ -274,24 +285,34 @@ export class EscapeRoomEngine {
       payloadValue: unknown;
     }> = [
       {
-        clueType: 'wires',
-        clueText: `Fuse note: NOT ${badWire1.toUpperCase()} or ${badWire2.toUpperCase()}`,
-        payloadValue: [badWire1, badWire2],
+        clueType: 'wire_riddle',
+        clueText: `Fuse Riddle: Live wire is ${isWarm ? 'WARM (RED/GOLD/WHITE)' : 'COOL (BLUE/GREEN/PURPLE)'} & NOT ${wireExclude.toUpperCase()}`,
+        payloadValue: wireExclude,
       },
       {
-        clueType: 'digit0',
-        clueText: `Keypad 1st digit = ${d1}`,
-        payloadValue: String(d1),
+        clueType: 'pin_riddle_a',
+        clueText: `Keypad Math: 3 digits sum to ${digitSum} · 3rd digit is ${d3 % 2 === 0 ? 'EVEN' : 'ODD'}`,
+        payloadValue: { sum: digitSum },
       },
       {
-        clueType: 'middle',
-        clueText: `Keypad 2nd=${pairSorted[0]} or ${pairSorted[1]}, 3rd=${d3}`,
-        payloadValue: { middle: `${pairSorted[0]}/${pairSorted[1]}`, third: String(d3) },
+        clueType: 'pin_riddle_b',
+        clueText: `Keypad Note: 1st digit is ${d1Pair[0]} or ${d1Pair[1]} · 2nd digit is ${d2 >= 5 ? 'HIGH (5–9)' : 'LOW (0–4)'}`,
+        payloadValue: { min: d1Pair[0] * 100, max: d1Pair[1] * 100 + 99 },
       },
       {
-        clueType: 'bridge0',
-        clueText: `Bridge Step 1 safe = ${secretBridge[0] === 'L' ? 'LEFT' : 'RIGHT'}`,
-        payloadValue: secretBridge[0],
+        clueType: 'uv_secret',
+        clueText: `UV Secret: Keypad 2nd digit = ${d2} & Bridge Step 1 = ${secretBridge[0]}`,
+        payloadValue: { d2: String(d2), step0: secretBridge[0] },
+      },
+      {
+        clueType: 'trap',
+        clueText: `💥 BOOBY TRAP! Poison dart drained -${TRAP_PENALTY_SEC}s!`,
+        payloadValue: TRAP_PENALTY_SEC,
+      },
+      {
+        clueType: 'trap',
+        clueText: `💥 CURSED MIMIC! Spark surge drained -${TRAP_PENALTY_SEC}s!`,
+        payloadValue: TRAP_PENALTY_SEC,
       },
     ];
 
@@ -310,17 +331,21 @@ export class EscapeRoomEngine {
       team,
       lockStage: 1,
       secretWire,
+      wireExclude,
       secretPin,
       secretBridge,
       eliminatedWires: [],
+      wireStrikes: 0,
       knownDigits: ['?', '?', '?'],
       minBound: 100,
       maxBound: 999,
       lastPinGuess: null,
       lastPinHint: null,
       bridgeStep: 0,
-      revealedSteps: [null, null, null],
+      revealedSteps: [null, null, null, null],
       props,
+      discoveredClues: [],
+      searchedPlayersThisStage: new Set(),
       spotlightPlayer: null,
       spotlightClass: 'knight',
       turnExpiresAtMs: nowMs + TURN_DURATION_SEC * 1000,
@@ -402,22 +427,47 @@ export class EscapeRoomEngine {
     chamber.turnExpiresAtMs = nowMs + TURN_DURATION_SEC * 1000;
   }
 
-  private applyPropReveal(chamber: InternalChamber, prop: InternalProp, finder: string): void {
+  private applyTimePenalty(sec: number, nowMs: number): void {
+    if (this.phase !== 'playing') return;
+    this.roundEndsAtMs = Math.max(nowMs + 1000, this.roundEndsAtMs - sec * 1000);
+  }
+
+  private applyPropReveal(
+    chamber: InternalChamber,
+    prop: InternalProp,
+    finder: string,
+    _isUv = false,
+    nowMs = Date.now()
+  ): void {
     prop.searchedBy = finder;
-    if (prop.clueType === 'wires') {
-      for (const w of prop.payloadValue as WireColor[]) {
-        if (!chamber.eliminatedWires.includes(w)) {
-          chamber.eliminatedWires.push(w);
-        }
+    if (prop.clueType === 'wire_riddle') {
+      const excluded = prop.payloadValue as WireColor;
+      if (!chamber.eliminatedWires.includes(excluded)) {
+        chamber.eliminatedWires.push(excluded);
       }
-    } else if (prop.clueType === 'digit0') {
-      chamber.knownDigits[0] = String(prop.payloadValue);
-    } else if (prop.clueType === 'middle') {
-      const info = prop.payloadValue as { middle: string; third: string };
-      chamber.knownDigits[1] = `[${info.middle}]`;
-      chamber.knownDigits[2] = info.third;
-    } else if (prop.clueType === 'bridge0') {
-      chamber.revealedSteps[0] = prop.payloadValue as BridgeSide;
+      if (!chamber.discoveredClues.includes(prop.clueText)) {
+        chamber.discoveredClues.push(prop.clueText);
+      }
+    } else if (prop.clueType === 'pin_riddle_a') {
+      if (!chamber.discoveredClues.includes(prop.clueText)) {
+        chamber.discoveredClues.push(prop.clueText);
+      }
+    } else if (prop.clueType === 'pin_riddle_b') {
+      const info = prop.payloadValue as { min: number; max: number };
+      chamber.minBound = Math.max(chamber.minBound, info.min);
+      chamber.maxBound = Math.min(chamber.maxBound, info.max);
+      if (!chamber.discoveredClues.includes(prop.clueText)) {
+        chamber.discoveredClues.push(prop.clueText);
+      }
+    } else if (prop.clueType === 'uv_secret') {
+      const info = prop.payloadValue as { d2: string; step0: BridgeSide };
+      chamber.knownDigits[1] = info.d2;
+      chamber.revealedSteps[0] = info.step0;
+      if (!chamber.discoveredClues.includes(prop.clueText)) {
+        chamber.discoveredClues.push(prop.clueText);
+      }
+    } else if (prop.clueType === 'trap') {
+      this.applyTimePenalty(TRAP_PENALTY_SEC, nowMs);
     }
   }
 
@@ -515,11 +565,12 @@ export class EscapeRoomEngine {
         const rival = chamber.team === 'red' ? this.chambers.blue : this.chambers.red;
         if (rival) {
           rival.blackoutUntilMs = nowMs + BLACKOUT_DURATION_MS;
-          const idx = rival.lockStage === 3 ? Math.min(2, rival.bridgeStep) : 2;
+          const idx =
+            rival.lockStage === 3 ? Math.min(BRIDGE_STEPS - 1, rival.bridgeStep) : BRIDGE_STEPS - 1;
           rival.secretBridge[idx] = rival.secretBridge[idx] === 'L' ? 'R' : 'L';
           rival.revealedSteps[idx] = null;
         }
-        this.latestBanner = `😈 ${handle} triggered BLACKOUT on the rival room!`;
+        this.latestBanner = `😈 ${handle} triggered BLACKOUT & scrambled rival bridge!`;
       } else {
         this.cursedDoublePot = true;
         this.potGold = Math.round(this.potGold * 2);
@@ -559,15 +610,48 @@ export class EscapeRoomEngine {
 
     if (safeDiamonds >= UV_GIFT_MIN_DIAMONDS) {
       if (chamber) {
-        const unsearched = chamber.props.find((p) => !p.searchedBy);
-        if (unsearched) {
-          this.applyPropReveal(chamber, unsearched, `${handle} (UV)`);
-          chamber.lastEffect = 'clue';
-          chamber.lastEffectPlayer = handle;
-          chamber.lastEffectAtMs = nowMs;
-          this.latestBanner = `🔦 ${handle}'s UV Light revealed ${unsearched.name.toUpperCase()}: ${unsearched.clueText}`;
-          return { tier: 'uv', message: this.latestBanner };
+        chamber.searchedPlayersThisStage.delete(handle);
+        const uvProp =
+          chamber.props.find((p) => !p.searchedBy && p.clueType === 'uv_secret') ??
+          chamber.props.find((p) => !p.searchedBy && p.clueType !== 'trap');
+        let propNote = '';
+        if (uvProp) {
+          this.applyPropReveal(chamber, uvProp, `${handle} (UV)`, true, nowMs);
+          propNote = `${uvProp.name.toUpperCase()}: ${uvProp.clueText}`;
         }
+
+        let scanNote = '';
+        if (chamber.lockStage === 1) {
+          const badWire = WIRE_COLORS.find(
+            (w) => w !== chamber.secretWire && !chamber.eliminatedWires.includes(w)
+          );
+          if (badWire) {
+            chamber.eliminatedWires.push(badWire);
+            scanNote = `NOT ${badWire.toUpperCase()}`;
+          }
+        } else if (chamber.lockStage === 2) {
+          const dIdx = ([1, 2, 0] as const).find((i) => chamber.knownDigits[i] === '?');
+          if (dIdx !== undefined) {
+            const dChar = String(chamber.secretPin)[dIdx];
+            chamber.knownDigits[dIdx] = dChar;
+            scanNote = `PIN digit #${dIdx + 1} = ${dChar}`;
+          }
+        } else {
+          const sIdx = ([0, 1, 2, 3] as const).find((i) => chamber.revealedSteps[i] === null);
+          if (sIdx !== undefined) {
+            chamber.revealedSteps[sIdx] = chamber.secretBridge[sIdx];
+            scanNote = `Bridge Step ${sIdx + 1} = ${chamber.secretBridge[sIdx]}`;
+          }
+        }
+
+        chamber.lastEffect = 'clue';
+        chamber.lastEffectPlayer = handle;
+        chamber.lastEffectAtMs = nowMs;
+        const details = [propNote, scanNote].filter(Boolean).join(' · ');
+        this.latestBanner = details
+          ? `🔦 ${handle}'s UV Blacklight revealed ${details}`
+          : `🔦 ${handle} recharged flashlight with UV Blacklight!`;
+        return { tier: 'uv', message: this.latestBanner };
       }
       this.latestBanner = `🔦 ${handle} scanned the room with a UV Blacklight!`;
       return { tier: 'uv', message: this.latestBanner };
@@ -657,14 +741,24 @@ export class EscapeRoomEngine {
     if (matchedProp) {
       if (matchedProp.searchedBy) {
         this.latestBanner = `${matchedProp.emoji} ${matchedProp.name.toUpperCase()} already checked (${matchedProp.clueText})`;
+      } else if (matchedProp.clueType === 'uv_secret') {
+        this.latestBanner = `🔒 ${matchedProp.name.toUpperCase()} is written in Invisible Ink! Gift 🔦 5💎 UV to decrypt it!`;
+      } else if (chamber.searchedPlayersThisStage.has(handle)) {
+        this.latestBanner = `🔋 ${handle} already used their 1 search for Lock ${chamber.lockStage}! Crack Lock ${chamber.lockStage}, switch player, or gift 🔦 5💎 UV!`;
       } else {
-        this.applyPropReveal(chamber, matchedProp, handle);
-        this.clueScoresThisRound.set(handle, (this.clueScoresThisRound.get(handle) ?? 0) + 1);
-        this.stats?.recordAction(handle, { cluesFound: 1, gold: 15 }, nowMs);
-        chamber.lastEffect = 'clue';
+        chamber.searchedPlayersThisStage.add(handle);
+        this.applyPropReveal(chamber, matchedProp, handle, false, nowMs);
         chamber.lastEffectPlayer = handle;
         chamber.lastEffectAtMs = nowMs;
-        this.latestBanner = `🔍 ${handle} searched ${matchedProp.name.toUpperCase()}: ${matchedProp.clueText}`;
+        if (matchedProp.clueType === 'trap') {
+          chamber.lastEffect = 'zap';
+          this.latestBanner = `💥 BOOBY TRAP in ${matchedProp.name.toUpperCase()}! ${handle} triggered a -${TRAP_PENALTY_SEC}s surge!`;
+        } else {
+          this.clueScoresThisRound.set(handle, (this.clueScoresThisRound.get(handle) ?? 0) + 1);
+          this.stats?.recordAction(handle, { cluesFound: 1, gold: 15 }, nowMs);
+          chamber.lastEffect = 'clue';
+          this.latestBanner = `🔍 ${handle} searched ${matchedProp.name.toUpperCase()}: ${matchedProp.clueText}`;
+        }
       }
       return { handled: true, kind: 'prop', message: this.latestBanner };
     }
@@ -685,7 +779,7 @@ export class EscapeRoomEngine {
     chamber.spotlightClass = pickClassForUser(handle);
 
     if (chamber.lockStage === 1) {
-      const wireMatch = /\b(red|blue|gold|green)\b/i.exec(lower);
+      const wireMatch = /\b(red|blue|gold|green|purple|white)\b/i.exec(lower);
       if (wireMatch) {
         const guess = wireMatch[1].toLowerCase() as WireColor;
         return this.attemptWire(chamber, handle, guess, nowMs);
@@ -720,6 +814,8 @@ export class EscapeRoomEngine {
   ): ChatActionResult {
     if (guess === chamber.secretWire) {
       chamber.lockStage = 2;
+      chamber.wireStrikes = 0;
+      chamber.searchedPlayersThisStage.clear();
       chamber.lastEffect = 'unlock';
       chamber.lastEffectPlayer = handle;
       chamber.lastEffectAtMs = nowMs;
@@ -729,11 +825,10 @@ export class EscapeRoomEngine {
       return { handled: true, kind: 'wire', message: this.latestBanner };
     }
 
-    if (!chamber.eliminatedWires.includes(guess)) {
-      chamber.eliminatedWires.push(guess);
-    }
-
     if (chamber.shieldedPlayers.has(handle)) {
+      if (!chamber.eliminatedWires.includes(guess)) {
+        chamber.eliminatedWires.push(guess);
+      }
       chamber.shieldedPlayers.delete(handle);
       chamber.lastEffect = 'shield';
       chamber.lastEffectPlayer = handle;
@@ -743,11 +838,39 @@ export class EscapeRoomEngine {
       return { handled: true, kind: 'wire', message: this.latestBanner };
     }
 
+    this.applyTimePenalty(ZAP_PENALTY_SEC, nowMs);
+    chamber.wireStrikes++;
     chamber.lastEffect = 'zap';
     chamber.lastEffectPlayer = handle;
     chamber.lastEffectAtMs = nowMs;
+
+    if (chamber.wireStrikes >= MAX_WIRE_STRIKES) {
+      chamber.wireStrikes = 0;
+      chamber.eliminatedWires = [];
+      const riddleRevealed = chamber.props.some(
+        (p) => p.clueType === 'wire_riddle' && Boolean(p.searchedBy)
+      );
+      if (riddleRevealed) {
+        chamber.eliminatedWires.push(chamber.wireExclude);
+      }
+      const isWarm = (WARM_WIRES as readonly WireColor[]).includes(chamber.secretWire);
+      const wireGroup = isWarm ? WARM_WIRES : COOL_WIRES;
+      const altWires = wireGroup.filter(
+        (w) => w !== chamber.wireExclude && w !== chamber.secretWire
+      );
+      if (altWires.length > 0) {
+        chamber.secretWire = altWires[Math.floor(clampUnit(this.rng()) * altWires.length)];
+      }
+      this.advanceSpotlight(chamber, nowMs);
+      this.latestBanner = `⚡ FUSE OVERLOAD (${MAX_WIRE_STRIKES}/${MAX_WIRE_STRIKES})! -${ZAP_PENALTY_SEC}s & wires re-scrambled! Next: ${chamber.spotlightPlayer ?? 'Open'}`;
+      return { handled: true, kind: 'wire', message: this.latestBanner };
+    }
+
+    if (!chamber.eliminatedWires.includes(guess)) {
+      chamber.eliminatedWires.push(guess);
+    }
     this.advanceSpotlight(chamber, nowMs);
-    this.latestBanner = `💥 ZAP! ${guess.toUpperCase()} fried ${handle}! Next up: ${chamber.spotlightPlayer ?? 'Open'}!`;
+    this.latestBanner = `💥 ZAP (-${ZAP_PENALTY_SEC}s)! ${guess.toUpperCase()} fried ${handle} (Overload ${chamber.wireStrikes}/${MAX_WIRE_STRIKES})! Next: ${chamber.spotlightPlayer ?? 'Open'}!`;
     return { handled: true, kind: 'wire', message: this.latestBanner };
   }
 
@@ -759,6 +882,7 @@ export class EscapeRoomEngine {
   ): ChatActionResult {
     if (guess === chamber.secretPin) {
       chamber.lockStage = 3;
+      chamber.searchedPlayersThisStage.clear();
       const digits = String(chamber.secretPin).split('') as [string, string, string];
       chamber.knownDigits = digits;
       chamber.lastPinGuess = guess;
@@ -768,7 +892,7 @@ export class EscapeRoomEngine {
       chamber.lastEffectAtMs = nowMs;
       this.stats?.recordAction(handle, { locksCracked: 1, gold: 50 }, nowMs);
       this.advanceSpotlight(chamber, nowMs);
-      this.latestBanner = `🔓 ${handle} cracked Keypad (${guess}) — LOCK 2 OPEN! Step L or R across the Bridge!`;
+      this.latestBanner = `🔓 ${handle} cracked Keypad (${guess}) — LOCK 2 OPEN! Cross the ${BRIDGE_STEPS}-Step Memory Bridge!`;
       return { handled: true, kind: 'pin', message: this.latestBanner };
     }
 
@@ -791,11 +915,12 @@ export class EscapeRoomEngine {
       return { handled: true, kind: 'pin', message: this.latestBanner };
     }
 
+    this.applyTimePenalty(ZAP_PENALTY_SEC, nowMs);
     chamber.lastEffect = 'zap';
     chamber.lastEffectPlayer = handle;
     chamber.lastEffectAtMs = nowMs;
     this.advanceSpotlight(chamber, nowMs);
-    this.latestBanner = `🚨 ${guess} → ${chamber.lastPinHint}! Range [${chamber.minBound}–${chamber.maxBound}] · Up next: ${chamber.spotlightPlayer ?? 'Open'}`;
+    this.latestBanner = `🚨 ${guess} → ${chamber.lastPinHint} (-${ZAP_PENALTY_SEC}s)! Range [${chamber.minBound}–${chamber.maxBound}] · Up next: ${chamber.spotlightPlayer ?? 'Open'}`;
     return { handled: true, kind: 'pin', message: this.latestBanner };
   }
 
@@ -809,36 +934,35 @@ export class EscapeRoomEngine {
     const expected = chamber.secretBridge[idx];
 
     if (side === expected) {
-      chamber.revealedSteps[idx] = expected;
       chamber.bridgeStep++;
       chamber.turnExpiresAtMs = nowMs + TURN_DURATION_SEC * 1000;
 
-      if (chamber.bridgeStep >= 3) {
+      if (chamber.bridgeStep >= BRIDGE_STEPS) {
         return this.completeRoomEscape(chamber, handle, nowMs);
       }
 
-      this.latestBanner = `✅ ${handle} cleared Step ${idx + 1} (${side})! Pick L or R for Step ${chamber.bridgeStep + 1}!`;
+      this.latestBanner = `✅ ${handle} cleared Step ${idx + 1} (${side})! Pick L or R for Step ${chamber.bridgeStep + 1}/${BRIDGE_STEPS}!`;
       return { handled: true, kind: 'bridge', message: this.latestBanner };
     }
 
-    // Wrong tile breaks — reveal the safe side for everyone!
-    chamber.revealedSteps[idx] = expected;
-
     if (chamber.shieldedPlayers.has(handle)) {
+      chamber.revealedSteps[idx] = expected;
       chamber.shieldedPlayers.delete(handle);
       chamber.lastEffect = 'shield';
       chamber.lastEffectPlayer = handle;
       chamber.lastEffectAtMs = nowMs;
       chamber.turnExpiresAtMs = nowMs + TURN_DURATION_SEC * 1000;
-      this.latestBanner = `🛟 ${handle}'s Rubber Suit caught Step ${idx + 1}! Safe side is ${expected}!`;
+      this.latestBanner = `🛟 ${handle}'s Rubber Suit caught Step ${idx + 1}! Safe side revealed: ${expected}!`;
       return { handled: true, kind: 'bridge', message: this.latestBanner };
     }
 
+    this.applyTimePenalty(ZAP_PENALTY_SEC, nowMs);
+    chamber.bridgeStep = 0;
     chamber.lastEffect = 'zap';
     chamber.lastEffectPlayer = handle;
     chamber.lastEffectAtMs = nowMs;
     this.advanceSpotlight(chamber, nowMs);
-    this.latestBanner = `🕳️ ${handle} fell on Step ${idx + 1}! Safe tile revealed: ${expected}! Up next: ${chamber.spotlightPlayer ?? 'Open'}`;
+    this.latestBanner = `🕳️ ${handle} fell at Step ${idx + 1} (${side} was a trap)! -${ZAP_PENALTY_SEC}s & Bridge reset to Step 1! Next: ${chamber.spotlightPlayer ?? 'Open'}`;
     return { handled: true, kind: 'bridge', message: this.latestBanner };
   }
 
@@ -913,6 +1037,7 @@ export class EscapeRoomEngine {
       team: chamber.team,
       lockStage: chamber.lockStage,
       eliminatedWires: [...chamber.eliminatedWires],
+      wireStrikes: chamber.wireStrikes,
       knownDigits: [...chamber.knownDigits] as [string, string, string],
       minBound: chamber.minBound,
       maxBound: chamber.maxBound,
@@ -920,6 +1045,7 @@ export class EscapeRoomEngine {
       lastPinHint: chamber.lastPinHint,
       bridgeStep: chamber.bridgeStep,
       revealedSteps: [...chamber.revealedSteps] as [
+        BridgeSide | null,
         BridgeSide | null,
         BridgeSide | null,
         BridgeSide | null,
@@ -931,7 +1057,11 @@ export class EscapeRoomEngine {
         corner: p.corner,
         searchedBy: p.searchedBy,
         clueText: p.searchedBy ? p.clueText : null,
+        isTrap: Boolean(p.searchedBy && p.clueType === 'trap'),
+        uvOnly: p.clueType === 'uv_secret',
       })),
+      discoveredClues: [...chamber.discoveredClues],
+      exhaustedSearchers: Array.from(chamber.searchedPlayersThisStage),
       spotlightPlayer: chamber.spotlightPlayer,
       spotlightClass: chamber.spotlightClass,
       turnExpiresAtMs: chamber.turnExpiresAtMs,

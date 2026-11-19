@@ -6,6 +6,7 @@ import type {
   ActiveMode,
   ChamberPublicState,
   HeroClass,
+  PropCorner,
   RoomSnapshotMessage,
   TeamId,
 } from '../shared/types.js';
@@ -28,7 +29,7 @@ interface PropVisual {
   beaconMat: THREE.MeshStandardMaterial;
   meshHolder: THREE.Group;
   label: LabelSlot;
-  corner: 'nw' | 'ne' | 'sw' | 'se';
+  corner: PropCorner;
 }
 
 interface ChamberRig {
@@ -55,11 +56,13 @@ interface ChamberRig {
   queueMixers: Array<THREE.AnimationMixer | null>;
 }
 
-const CORNER_COORDS: Record<'nw' | 'ne' | 'sw' | 'se', [number, number]> = {
-  nw: [-2.1, -2.25],
-  ne: [2.1, -2.25],
-  sw: [-2.15, 1.15],
-  se: [2.15, 1.15],
+const CORNER_COORDS: Record<PropCorner, [number, number]> = {
+  nw: [-2.15, -2.35],
+  ne: [2.15, -2.35],
+  mw: [-2.2, -0.55],
+  me: [2.2, -0.55],
+  sw: [-2.15, 1.2],
+  se: [2.15, 1.2],
 };
 
 const QUEUE_SLOTS: ReadonlyArray<{ x: number; z: number; rotY: number }> = [
@@ -362,23 +365,23 @@ export class WorldRenderer {
       floorGroup.add(cry);
     }
 
-    // 3-Step L/R Bridge Tiles in front of the Vault Door
+    // 4-Step L/R Memory Bridge Tiles in front of the Vault Door
     const bridgeTiles: Array<{ L: THREE.MeshStandardMaterial; R: THREE.MeshStandardMaterial }> = [];
-    const tileGeo = this.track(new THREE.BoxGeometry(0.58, 0.08, 0.48));
-    for (let step = 0; step < 3; step++) {
+    const tileGeo = this.track(new THREE.BoxGeometry(0.56, 0.08, 0.42));
+    for (let step = 0; step < 4; step++) {
       const matL = this.track(new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.5 }));
       const matR = this.track(new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.5 }));
       const tileL = new THREE.Mesh(tileGeo, matL);
       const tileR = new THREE.Mesh(tileGeo, matR);
-      const tz = -0.75 - step * 0.68;
+      const tz = -0.55 - step * 0.56;
       tileL.position.set(-0.46, 0.06, tz);
       tileR.position.set(0.46, 0.06, tz);
       floorGroup.add(tileL, tileR);
       bridgeTiles.push({ L: matL, R: matR });
     }
 
-    // 4 Corner Searchable Props with Beacons & Floating Labels
-    const corners: Array<'nw' | 'ne' | 'sw' | 'se'> = ['nw', 'ne', 'sw', 'se'];
+    // 6 Searchable Props with Beacons & Floating Labels
+    const corners: PropCorner[] = ['nw', 'ne', 'mw', 'me', 'sw', 'se'];
     const props: PropVisual[] = corners.map((corner, idx) => {
       const [px, pz] = CORNER_COORDS[corner];
       const pGroup = new THREE.Group();
@@ -392,13 +395,13 @@ export class WorldRenderer {
           roughness: 0.4,
         })
       );
-      const ring = new THREE.Mesh(this.track(new THREE.TorusGeometry(0.38, 0.045, 8, 24)), pedMat);
+      const ring = new THREE.Mesh(this.track(new THREE.TorusGeometry(0.36, 0.045, 8, 24)), pedMat);
       ring.rotation.x = Math.PI / 2;
       ring.position.y = 0.05;
 
       const meshHolder = new THREE.Group();
       const fallbackCrate = new THREE.Mesh(
-        this.track(new THREE.BoxGeometry(0.44, 0.44, 0.44)),
+        this.track(new THREE.BoxGeometry(0.42, 0.42, 0.42)),
         this.track(
           new THREE.MeshStandardMaterial({
             color: idx % 2 === 0 ? 0xd97706 : 0x7c3aed,
@@ -406,11 +409,11 @@ export class WorldRenderer {
           })
         )
       );
-      fallbackCrate.position.y = 0.24;
+      fallbackCrate.position.y = 0.22;
       meshHolder.add(fallbackCrate);
 
-      const label = this.createLabelSlot(1.45, 0.36);
-      label.sprite.position.set(0, 1.05, 0);
+      const label = this.createLabelSlot(1.3, 0.32);
+      label.sprite.position.set(0, 0.98, 0);
       pGroup.add(ring, meshHolder, label.sprite);
       floorGroup.add(pGroup);
       return { group: pGroup, beaconMat: pedMat, meshHolder, label, corner };
@@ -584,7 +587,7 @@ export class WorldRenderer {
           const tpl = this.worldPropTemplates[idx % this.worldPropTemplates.length];
           pv.meshHolder.clear();
           const clone = tpl.clone(true);
-          clone.scale.setScalar(0.44);
+          clone.scale.setScalar(0.38);
           pv.meshHolder.add(clone);
         });
       }
@@ -680,31 +683,46 @@ export class WorldRenderer {
       rig.lockCrystalMats[i].emissive.setHex(unlocked ? 0x10b981 : 0xe11d48);
     }
 
-    // Bridge revealed safe tiles
-    for (let s = 0; s < 3; s++) {
+    // Bridge revealed safe tiles (emerald) & active run progress (sky blue)
+    for (let s = 0; s < 4; s++) {
       const safe = state.revealedSteps[s];
-      rig.bridgeTiles[s].L.color.setHex(safe === 'L' ? 0x34d399 : 0x64748b);
-      rig.bridgeTiles[s].R.color.setHex(safe === 'R' ? 0x34d399 : 0x64748b);
+      if (safe === 'L' || safe === 'R') {
+        rig.bridgeTiles[s].L.color.setHex(safe === 'L' ? 0x34d399 : 0x64748b);
+        rig.bridgeTiles[s].R.color.setHex(safe === 'R' ? 0x34d399 : 0x64748b);
+      } else if (s < state.bridgeStep) {
+        rig.bridgeTiles[s].L.color.setHex(0x38bdf8);
+        rig.bridgeTiles[s].R.color.setHex(0x38bdf8);
+      } else {
+        rig.bridgeTiles[s].L.color.setHex(0x64748b);
+        rig.bridgeTiles[s].R.color.setHex(0x64748b);
+      }
     }
 
-    // Shuffled 4 corner props + glowing beacon status
+    // Shuffled 6 props + trap/clue/UV glowing beacon status
     for (let i = 0; i < Math.min(rig.props.length, state.props.length); i++) {
       const pv = rig.props[i];
       const propData = state.props[i];
       const [px, pz] = CORNER_COORDS[propData.corner];
       pv.group.position.set(px, 0.02, pz);
       const found = Boolean(propData.searchedBy);
-      pv.beaconMat.color.setHex(found ? 0x34d399 : 0xfbbf24);
-      pv.beaconMat.emissive.setHex(found ? 0x10b981 : 0xd97706);
-      const labelText = found
-        ? `${propData.emoji} DONE`
-        : `${propData.emoji} ${propData.name.toUpperCase()}`;
-      this.drawLabelSlot(
-        pv.label,
-        labelText,
-        found ? 'rgba(6, 78, 59, 0.9)' : 'rgba(15, 23, 42, 0.9)',
-        found ? '#34d399' : '#fbbf24'
-      );
+      if (found && propData.isTrap) {
+        pv.beaconMat.color.setHex(0xf43f5e);
+        pv.beaconMat.emissive.setHex(0xe11d48);
+        this.drawLabelSlot(pv.label, `${propData.emoji} TRAP!`, 'rgba(127, 29, 29, 0.92)', '#fb7185');
+      } else if (found) {
+        pv.beaconMat.color.setHex(0x34d399);
+        pv.beaconMat.emissive.setHex(0x10b981);
+        this.drawLabelSlot(pv.label, `${propData.emoji} CLUE`, 'rgba(6, 78, 59, 0.9)', '#34d399');
+      } else {
+        pv.beaconMat.color.setHex(propData.uvOnly ? 0xc084fc : 0xfbbf24);
+        pv.beaconMat.emissive.setHex(propData.uvOnly ? 0x9333ea : 0xd97706);
+        this.drawLabelSlot(
+          pv.label,
+          `${propData.emoji} ${propData.name.toUpperCase()}`,
+          'rgba(15, 23, 42, 0.9)',
+          propData.uvOnly ? '#c084fc' : '#fbbf24'
+        );
+      }
     }
 
     // Spotlight character

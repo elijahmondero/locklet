@@ -151,6 +151,7 @@ body {
 .lk-btn.mint { background: #047857; border-color: #34d399; color: #fff; }
 .lk-btn.rose { background: #be123c; border-color: #fb7185; color: #fff; }
 .lk-btn.violet { background: #6d28d9; border-color: #c4b5fd; color: #fff; }
+.lk-btn.chalk { background: #e2e8f0; border-color: #ffffff; color: #0f172a; }
 .lk-btn:disabled { opacity: 0.4; cursor: default; }
 
 .banner-toast {
@@ -442,6 +443,9 @@ export class StreamHUD {
     this.userInputEl = el('input', 'lk-input user-tag');
     this.userInputEl.value = '@Player1';
     this.userInputEl.placeholder = '@user';
+    this.userInputEl.addEventListener('input', () => {
+      if (this.lastSnapshot) this.updateSnapshot(this.lastSnapshot);
+    });
     const chatInput = el('input', 'lk-input lk-grow');
     chatInput.placeholder = 'Type prop, wire, 3-digit PIN, L/R, or "run"...';
     const sendBtn = el('button', 'lk-btn mint', 'Send');
@@ -630,19 +634,19 @@ export class StreamHUD {
       const wires = WIRE_COLORS.map((w) =>
         ch.eliminatedWires.includes(w) ? `✖${w.toUpperCase()}` : w.toUpperCase()
       ).join(' · ');
-      return `🔌 LOCK 1 WIRES: ${wires}`;
+      return `🔌 WIRES (⚡${ch.wireStrikes ?? 0}/2): ${wires}`;
     }
     if (ch.lockStage === 2) {
       const pin = ch.knownDigits.join(' ');
       const hint = ch.lastPinHint ? ` · Last ${ch.lastPinGuess} (${ch.lastPinHint})` : '';
-      return `🔢 LOCK 2 PIN: [ ${pin} ] · Range ${ch.minBound}–${ch.maxBound}${hint}`;
+      return `🔢 PIN [ ${pin} ] · Range ${ch.minBound}–${ch.maxBound}${hint}`;
     }
-    const steps = [0, 1, 2].map((i) => {
-      if (i < ch.bridgeStep) return `✅${ch.revealedSteps[i]}`;
-      if (ch.revealedSteps[i]) return `Step${i + 1}:${ch.revealedSteps[i]}`;
-      return `Step${i + 1}:L/R`;
+    const steps = [0, 1, 2, 3].map((i) => {
+      if (ch.revealedSteps[i]) return `✅${ch.revealedSteps[i]}`;
+      if (i < ch.bridgeStep) return '🔵';
+      return `S${i + 1}:?`;
     });
-    return `🌉 LOCK 3 BRIDGE: ${steps.join(' → ')} → 🔑`;
+    return `🌉 BRIDGE (Step ${ch.bridgeStep + 1}/4): ${steps.join(' → ')} → 🔑`;
   }
 
   private buildCoopPanel(ch: ChamberPublicState): HTMLElement {
@@ -655,12 +659,19 @@ export class StreamHUD {
     );
     const readout = el('div', 'lock-readout', this.formatLockReadout(ch));
 
+    const discovered = ch.discoveredClues ?? [];
     const clues = el('div', 'clues-row');
-    for (const prop of ch.props) {
-      const text = prop.searchedBy
-        ? `${prop.emoji} ${prop.clueText}`
-        : `${prop.emoji} Type "${prop.name}"`;
-      clues.appendChild(el('span', prop.searchedBy ? 'clue-chip found' : 'clue-chip', text));
+    for (const clueText of discovered) {
+      clues.appendChild(el('span', 'clue-chip found', clueText));
+    }
+    if (discovered.length < 3) {
+      clues.appendChild(
+        el(
+          'span',
+          'clue-chip',
+          '🔦 Search props (1 battery/lock) — watch out for 2 Booby-Traps (-5s)!'
+        )
+      );
     }
 
     panel.append(spotRow, readout, clues);
@@ -678,6 +689,10 @@ export class StreamHUD {
   }
 
   private renderQuickControls(snapshot: RoomSnapshotMessage, ch: ChamberPublicState): void {
+    const rawUser = this.getActiveUsername().replace(/^@+/, '');
+    const normalizedUser = rawUser ? `@${rawUser}` : '@Player1';
+    const isExhausted = (ch.exhaustedSearchers ?? []).includes(normalizedUser);
+
     // Prop search buttons
     const propBtns: HTMLElement[] = [];
     if (snapshot.activeMode === 'versus') {
@@ -690,14 +705,17 @@ export class StreamHUD {
       propBtns.push(rBtn, bBtn);
     }
     for (const p of ch.props) {
-      const prefix = p.searchedBy ? '✓ ' : snapshot.activeMode === 'versus' ? '' : 'Search ';
-      const b = el(
-        'button',
-        p.searchedBy ? 'lk-btn mint' : 'lk-btn',
-        `${p.emoji} ${prefix}${p.name}`
-      );
+      const statusPrefix = p.searchedBy ? (p.isTrap ? '💥' : '✓') : '';
+      const cls = p.searchedBy
+        ? p.isTrap
+          ? 'lk-btn rose'
+          : 'lk-btn mint'
+        : p.uvOnly
+          ? 'lk-btn violet'
+          : 'lk-btn';
+      const b = el('button', cls, `${p.emoji} ${statusPrefix}${p.name}`);
       b.type = 'button';
-      b.disabled = Boolean(p.searchedBy);
+      b.disabled = Boolean(p.searchedBy) || (isExhausted && !p.uvOnly);
       b.addEventListener('click', () => void this.sendChat(p.name));
       propBtns.push(b);
     }
@@ -716,30 +734,35 @@ export class StreamHUD {
         blue: 'lk-btn active',
         gold: 'lk-btn gold',
         green: 'lk-btn mint',
+        purple: 'lk-btn violet',
+        white: 'lk-btn chalk',
       };
       for (const w of WIRE_COLORS) {
-        const b = el('button', styles[w], `Cut ${w.toUpperCase()}`);
+        const b = el('button', styles[w], `✂️ ${w.toUpperCase()}`);
         b.type = 'button';
         b.disabled = ch.eliminatedWires.includes(w);
         b.addEventListener('click', () => void this.sendChat(w));
         actBtns.push(b);
       }
     } else if (ch.lockStage === 2) {
-      const midVal = Math.floor((ch.minBound + ch.maxBound) / 2);
       const pinInput = el('input', 'lk-input');
       pinInput.type = 'text';
       pinInput.maxLength = 3;
-      pinInput.value = String(midVal);
-      pinInput.style.width = '74px';
-      const tryPinBtn = el('button', 'lk-btn gold', '🔢 Enter PIN');
+      pinInput.placeholder = '100–999';
+      pinInput.style.width = '78px';
+      const tryPinBtn = el('button', 'lk-btn gold lk-grow', '🔢 Crack PIN (-6s if wrong)');
       tryPinBtn.type = 'button';
-      tryPinBtn.addEventListener('click', () => {
-        void this.sendChat(pinInput.value.trim() || String(midVal));
+      const submitPin = () => {
+        const code = pinInput.value.trim();
+        if (/^\d{3}$/.test(code)) {
+          void this.sendChat(code);
+        }
+      };
+      tryPinBtn.addEventListener('click', submitPin);
+      pinInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submitPin();
       });
-      const midBtn = el('button', 'lk-btn active', `Guess Mid (${midVal})`);
-      midBtn.type = 'button';
-      midBtn.addEventListener('click', () => void this.sendChat(String(midVal)));
-      actBtns.push(pinInput, tryPinBtn, midBtn);
+      actBtns.push(pinInput, tryPinBtn);
     } else {
       const lBtn = el('button', 'lk-btn active lk-grow', '⬅️ Step LEFT (L)');
       lBtn.type = 'button';

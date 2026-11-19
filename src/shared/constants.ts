@@ -1,6 +1,15 @@
 import type { HeroClass, RoomThemeId, RoomThemeMeta, WireColor } from './types.js';
 
-export const WIRE_COLORS: readonly WireColor[] = ['red', 'blue', 'gold', 'green'] as const;
+export const WIRE_COLORS: readonly WireColor[] = [
+  'red',
+  'blue',
+  'gold',
+  'green',
+  'purple',
+  'white',
+] as const;
+export const WARM_WIRES: readonly WireColor[] = ['red', 'gold', 'white'] as const;
+export const COOL_WIRES: readonly WireColor[] = ['blue', 'green', 'purple'] as const;
 
 export const HERO_CLASSES: readonly HeroClass[] = ['knight', 'wizard', 'rogue', 'bard'] as const;
 
@@ -11,6 +20,10 @@ export const TURN_DURATION_SEC = 6;
 export const BLACKOUT_DURATION_MS = 6000;
 export const TAPS_PER_BOOST = 100;
 export const TAP_BONUS_SEC = 5;
+export const BRIDGE_STEPS = 4;
+export const ZAP_PENALTY_SEC = 6;
+export const TRAP_PENALTY_SEC = 5;
+export const MAX_WIRE_STRIKES = 2;
 export const UV_GIFT_MIN_DIAMONDS = 5;
 export const CUT_LINE_GIFT_MIN_DIAMONDS = 10;
 export const SHIELD_GIFT_MIN_DIAMONDS = 15;
@@ -27,7 +40,7 @@ export const ROOM_THEMES: Record<RoomThemeId, RoomThemeMeta> = {
     hazardColor: 0x0ea5e9,
     ambientSkyTop: 0x082f49,
     ambientSkyBottom: 0x0284c7,
-    props: ['anchor', 'chest', 'statue', 'barrel'],
+    props: ['anchor', 'chest', 'statue', 'barrel', 'compass', 'helm'],
   },
   magma_forge: {
     id: 'magma_forge',
@@ -39,7 +52,7 @@ export const ROOM_THEMES: Record<RoomThemeId, RoomThemeMeta> = {
     hazardColor: 0xf97316,
     ambientSkyTop: 0x2b0707,
     ambientSkyBottom: 0xb91c1c,
-    props: ['anvil', 'furnace', 'shield', 'crate'],
+    props: ['anvil', 'furnace', 'shield', 'crate', 'bellows', 'cauldron'],
   },
   haunted_study: {
     id: 'haunted_study',
@@ -51,7 +64,7 @@ export const ROOM_THEMES: Record<RoomThemeId, RoomThemeMeta> = {
     hazardColor: 0xa855f7,
     ambientSkyTop: 0x1e1b4b,
     ambientSkyBottom: 0x6d28d9,
-    props: ['book', 'painting', 'coffin', 'mirror'],
+    props: ['book', 'painting', 'coffin', 'mirror', 'skull', 'candle'],
   },
   clockwork_vault: {
     id: 'clockwork_vault',
@@ -63,7 +76,7 @@ export const ROOM_THEMES: Record<RoomThemeId, RoomThemeMeta> = {
     hazardColor: 0x84cc16,
     ambientSkyTop: 0x1c1917,
     ambientSkyBottom: 0x65a30d,
-    props: ['clock', 'safe', 'desk', 'globe'],
+    props: ['clock', 'safe', 'desk', 'globe', 'gears', 'hourglass'],
   },
 };
 
@@ -79,16 +92,24 @@ export const PROP_EMOJIS: Record<string, string> = {
   chest: '🧰',
   statue: '🗿',
   barrel: '🛢️',
+  compass: '🧭',
+  helm: '☸️',
   anvil: '🔨',
   furnace: '🔥',
   shield: '🛡️',
   crate: '📦',
+  bellows: '💨',
+  cauldron: '🍯',
   book: '📖',
   painting: '🖼️',
   coffin: '⚰️',
   mirror: '🪞',
+  skull: '💀',
+  candle: '🕯️',
   clock: '🕰️',
   safe: '🗄️',
   desk: '🪵',
   globe: '🌐',
+  gears: '⚙️',
+  hourglass: '⏳',
 };
